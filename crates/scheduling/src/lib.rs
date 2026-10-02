@@ -3,10 +3,12 @@
 mod backward;
 mod forward;
 mod graph;
+mod io;
 
 pub use backward::{ConstraintViolation, CpmResult, LateDates, backward_pass, calculate_cpm};
 pub use forward::{DrivingCause, EarlyDates, ForwardPassResult, ScheduleError, forward_pass};
 pub use graph::{GraphError, OpenEnds, ScheduleGraph};
+pub use io::{JsonBridgeError, calculate_schedule_json, parse_schedule_json};
 
 use engineo_calendar::WorkMinutes;
 use engineo_project_model::ENGINE_CONTRACT_VERSION;
