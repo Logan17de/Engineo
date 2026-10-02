@@ -1,0 +1,22 @@
+{
+  "name": "@engineo/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node --import tsx --test src/**/*.test.ts",
+    "start": "node dist/server.js"
+  },
+  "dependencies": {
+    "@engineo/contracts": "workspace:*",
+    "fastify": "5.6.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.5.2",
+    "tsx": "4.20.5",
+    "typescript": "workspace:*"
+  }
+}
