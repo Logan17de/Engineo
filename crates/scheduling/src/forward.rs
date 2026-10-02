@@ -296,7 +296,11 @@ pub(crate) fn shift_by_lag(
     anchor: DateTime<Utc>,
     lag_minutes: i64,
 ) -> Result<DateTime<Utc>, ScheduleError> {
-    if lag_minutes >= 0 {
+    if lag_minutes == 0 {
+        return Ok(anchor);
+    }
+
+    if lag_minutes > 0 {
         let minutes =
             u32::try_from(lag_minutes).map_err(|_| ScheduleError::LagOutOfRange(lag_minutes))?;
         return Ok(calendar.add_work_duration(anchor, WorkMinutes::new(minutes))?);
