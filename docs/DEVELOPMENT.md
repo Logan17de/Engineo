@@ -12,12 +12,12 @@ The repository pins the Rust toolchain in `rust-toolchain.toml` and declares the
 ## Install
 
 ```bash
-pnpm install
+pnpm install --frozen-lockfile
 ```
 
 Rust workspace dependencies are resolved by Cargo when Rust commands run.
 
-## Run the product shells
+## Run the Planner
 
 Start the web application and API together:
 
@@ -30,7 +30,20 @@ Defaults:
 - API: http://localhost:4000
 - API health: http://localhost:4000/health
 
-These are foundation shells, not the planner UI.
+Set `DATABASE_URL` to a disposable development PostgreSQL database, run
+`pnpm --filter @engineo/api db:migrate`, and build the deterministic bridge:
+
+```bash
+cargo build --release --locked -p engineo-scheduling --bin engineo-schedule
+export ENGINEO_SCHEDULER_BIN="$PWD/target/release/engineo-schedule"
+```
+
+The Planner uses same-origin `/api` forwarding to `ENGINEO_API_ORIGIN` (default
+`http://127.0.0.1:4000`). Set `APP_ORIGIN=http://localhost:3000` and
+`COOKIE_SECURE=false` for this local HTTP development origin. Production API
+configuration requires HTTPS and secure cookies. Sign-in requires a provisioned
+account; identity administration is still an open acceptance item. Browser tests
+create unique accounts only in their disposable test database.
 
 ## Run all checks
 
@@ -49,7 +62,16 @@ pnpm lint
 pnpm format:check
 pnpm test:ts
 cargo test --workspace
+pnpm test:browser
 ```
+
+Browser acceptance uses the production builds and real PostgreSQL/Rust bridge.
+Run `pnpm build` and `pnpm exec playwright install --with-deps chromium` first,
+and provide a disposable loopback `DATABASE_URL` and `ENGINEO_SCHEDULER_BIN`.
+Playwright starts its own servers on ports 3100/4000. A system Chromium can be
+selected with `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`. See the
+[browser execution record](verification/2026-10-02-planner-browser.md) for
+coverage and current limits. Generated traces/reports are ignored artifacts.
 
 ## Formatting
 

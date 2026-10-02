@@ -18,7 +18,7 @@ and add an evidence record under `docs/verification/` with each reviewed increme
 | PR #53 TypeScript CI | run `36999446754`, formatting fails in `security.test.ts`; later checks skipped | failed |
 | PR #53 Rust checks/audit | CI job success; local Rust fmt/Clippy and 45 active tests pass | passed |
 | PR #53 CodeQL | run `36999446752` completes; reported high login limiter finding is not clearance | pending |
-| Project API branch | `d2aa71235bb7474dbef0257bab92b3088c791ea2` preserved; reconciled and registered on `feat/planner-api-ready`, real Rust/PostgreSQL tests | passed API increment; browser pending |
+| Project API branch | `d2aa71235bb7474dbef0257bab92b3088c791ea2` preserved; reconciled and registered on `feat/planner-api-ready`, real Rust/PostgreSQL tests | passed API increment and scoped browser increment |
 | Main web / API | static landing page and `/health`; no Planner acceptance | pending |
 | Saved cloud runtime | Node 24.19.0, pnpm 12.8.0, Rust 1.99.0; PostgreSQL 18.4 on loopback, all under `/workspace` | passed |
 | Publication | Git push dry run succeeds; GitHub connector reads succeed; `gh` token invalid | passed via Git + connector |
@@ -28,11 +28,11 @@ and add an evidence record under `docs/verification/` with each reviewed increme
 
 | Milestone | Required acceptance | Current status / next evidence |
 | --- | --- | --- |
-| M0 scheduling | Domain and versioned JSON; graph/cycles; work calendars/DST; FS/SS/FF/SF + lag; early/late dates; float; milestones/constraints; controlling path; deterministic golden/property fixtures | implemented; existing Rust tests pass, full JSON bridge review pending |
+| M0 scheduling | Domain and versioned JSON; graph/cycles; work calendars/DST; FS/SS/FF/SF + lag; early/late dates; float; milestones/constraints; controlling path; deterministic golden/property fixtures | existing Rust tests and reviewed JSON bridge pass; signed numeric lag boundaries do not guarantee a calendar/date can calculate extreme durations |
 | M0 scale | Document sparse/dense 1k/10k/100k runs with SHA, compiler, CPU, memory, build profile, counts and timings | passed: [measured scale record](verification/2026-10-02-m0-performance.md); RSS and repeated reference-machine budgets pending |
 | S0 supply chain | JS/Rust lockfiles, frozen/locked installs, high vulnerability gates, build-script policy, minimal CI permissions, threat model, no secrets, dependency review | frozen/locked inputs and CI/CodeQL passed on PR #54 `de1b88f`; dependency review failed because Dependency Graph is disabled, owner approval pending |
-| M1 identity | Org/project creation, sessions/revocation/CSRF/Origin, server RBAC, audit, abuse controls and negative cross-tenant tests | auth repairs tested: [execution record](verification/2026-10-02-auth.md); org/project API and scoped mutation/export negatives pass: [API evidence](verification/2026-10-02-planner-api.md); UI and full role matrix pending |
-| M1 Planner | WBS CRUD/restructure, virtualized grid and synchronized Gantt, relationships/calendars/constraints, schedule controls, 1k+ activities created/edited/recalculated in browser | pending |
+| M1 identity | Org/project creation, sessions/revocation/CSRF/Origin, server RBAC, audit, abuse controls and negative cross-tenant tests | auth/API and scoped browser negatives pass: [auth](verification/2026-10-02-auth.md), [API](verification/2026-10-02-planner-api.md), [browser](verification/2026-10-02-planner-browser.md); full identity administration/role matrix and production controls pending |
+| M1 Planner | WBS CRUD/restructure, virtualized grid and synchronized Gantt, relationships/calendars/constraints, schedule controls, 1k+ activities created/edited/recalculated in browser | scoped browser increment passed: [execution record](verification/2026-10-02-planner-browser.md); durable results, full latency characterization and remaining workflow exits pending |
 | M1 data/workflow | Data date + basic progress, filters/group/sort/saved views, project summary, CSV/spreadsheet import/export, explicit failures, data ownership | pending |
 | S1 production controls | Encrypted transport/storage and secret-store integration; automated encrypted backups; measured restore; project authorization and audit | never run operationally; no production credentials or infrastructure |
 | M2 controls | Immutable baselines/variance; richer constraints; suspend/resume, actual/remaining and out-of-sequence policies; longest/multiple paths; diagnostics/date reasons; codes/custom fields | pending |
@@ -83,7 +83,10 @@ merge only after that review. Continue independent implementation while waiting.
 
 - Draft PR #54: `de1b88f9efbccb1e536f625fbb99cb2a6e1a88fc`, scoped auth
   follow-up; CI and CodeQL passed, dependency-review setting blocker remains.
-- Planner API increment follows #54 and preserves the existing project API
-  lineage. Exact published SHA/checks are recorded in its draft PR.
-- Planner browser, baselines/progress/scenarios, resource/cost/EVM, enterprise/AI/
-  integrations and operational gates are still pending. No release is complete.
+- Draft PR #55: `f53c2619c414650b95487611aa19d83c7454a376`, reviewed
+  Planner API and signed-lag delta. CI `37017343328` and CodeQL `37017343490`
+  passed; Dependency Review `37017343803` failed on disabled Dependency Graph.
+- The Planner browser increment follows #55; exact publication/checks belong in
+  its draft PR. Its local five-case acceptance run passed.
+- Remaining M1 workflow, baselines/progress/scenarios, resource/cost/EVM,
+  enterprise/AI/integrations and operational gates are pending. No release is complete.

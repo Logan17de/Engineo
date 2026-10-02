@@ -19,11 +19,11 @@ export {
   type WeekdayV1,
   type WorkIntervalV1,
 } from "./schedule.js";
-
 export {
   canonicalizeScheduleInputV1,
   serializeScheduleInputV1,
 } from "./serialization.js";
+export { ENGINE_TIME_ZONES } from "./time-zones.generated.js";
 
 export {
   isIanaTimeZone,

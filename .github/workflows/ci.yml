@@ -66,6 +66,12 @@ jobs:
       - name: Dependency audit
         run: pnpm audit --audit-level high
 
+      - name: Install Chromium for browser acceptance
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Browser Planner acceptance
+        run: pnpm test:browser
+
   rust:
     name: Rust engine
     runs-on: ubuntu-latest
