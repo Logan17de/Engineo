@@ -152,8 +152,14 @@ mod tests {
     #[test]
     fn scheduling_enums_are_explicit() {
         assert_ne!(ActivityKind::Task, ActivityKind::StartMilestone);
-        assert_ne!(RelationshipType::FinishToStart, RelationshipType::StartToStart);
+        assert_ne!(
+            RelationshipType::FinishToStart,
+            RelationshipType::StartToStart
+        );
         assert_ne!(LagCalendarPolicy::Project, LagCalendarPolicy::Successor);
-        assert_ne!(ProjectFinishPolicy::Calculated, ProjectFinishPolicy::RequiredFinish);
+        assert_ne!(
+            ProjectFinishPolicy::Calculated,
+            ProjectFinishPolicy::RequiredFinish
+        );
     }
 }
