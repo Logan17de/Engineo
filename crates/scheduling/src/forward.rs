@@ -201,9 +201,7 @@ pub(crate) fn compile_calendars(
     Ok(calendars)
 }
 
-fn incoming_relationships(
-    relationships: &[Relationship],
-) -> BTreeMap<&str, Vec<&Relationship>> {
+fn incoming_relationships(relationships: &[Relationship]) -> BTreeMap<&str, Vec<&Relationship>> {
     let mut incoming = BTreeMap::<&str, Vec<&Relationship>>::new();
 
     for relationship in relationships {
