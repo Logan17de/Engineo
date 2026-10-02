@@ -1,7 +1,8 @@
 use chrono::{DateTime, Utc};
 use engineo_project_model::{
-    Activity, ActivityKind, LagCalendarPolicy, ProjectDefinition, ProjectFinishPolicy, Relationship,
-    RelationshipType, ScheduleInput, ScheduleOptions, WbsNode, Weekday, WorkCalendar, WorkInterval,
+    Activity, ActivityKind, LagCalendarPolicy, ProjectDefinition, ProjectFinishPolicy,
+    Relationship, RelationshipType, ScheduleInput, ScheduleOptions, WbsNode, Weekday, WorkCalendar,
+    WorkInterval,
 };
 use engineo_scheduling::forward_pass;
 
@@ -161,7 +162,10 @@ fn fs_ss_ff_relationships_calculate_earliest_dates() {
 
     for (relationship_type, lag, expected_start, expected_finish) in cases {
         let schedule = input(
-            vec![activity("A", 480, "standard"), activity("B", 240, "standard")],
+            vec![
+                activity("A", 480, "standard"),
+                activity("B", 240, "standard"),
+            ],
             vec![relationship("A", "B", relationship_type, lag)],
             vec![standard_calendar()],
             LagCalendarPolicy::Successor,
@@ -237,12 +241,7 @@ fn milestones_have_zero_duration_at_their_earliest_working_instant() {
 
     let schedule = input(
         vec![activity("A", 480, "standard"), milestone],
-        vec![relationship(
-            "A",
-            "M",
-            RelationshipType::FinishToStart,
-            0,
-        )],
+        vec![relationship("A", "M", RelationshipType::FinishToStart, 0)],
         vec![standard_calendar()],
         LagCalendarPolicy::Successor,
     );
@@ -274,12 +273,7 @@ fn successor_calendar_controls_lag_when_configured() {
             activity("A", 2400, "standard"),
             activity("B", 240, "seven-day"),
         ],
-        vec![relationship(
-            "A",
-            "B",
-            RelationshipType::FinishToStart,
-            480,
-        )],
+        vec![relationship("A", "B", RelationshipType::FinishToStart, 480)],
         vec![standard_calendar(), seven_day],
         LagCalendarPolicy::Successor,
     );
@@ -310,12 +304,7 @@ fn predecessor_calendar_policy_counts_lag_on_predecessor_working_time() {
             activity("A", 2400, "standard"),
             activity("B", 240, "seven-day"),
         ],
-        vec![relationship(
-            "A",
-            "B",
-            RelationshipType::FinishToStart,
-            480,
-        )],
+        vec![relationship("A", "B", RelationshipType::FinishToStart, 480)],
         vec![standard_calendar(), seven_day],
         LagCalendarPolicy::Predecessor,
     );
