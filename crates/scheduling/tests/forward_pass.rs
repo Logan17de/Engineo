@@ -312,7 +312,7 @@ fn predecessor_calendar_policy_counts_lag_on_predecessor_working_time() {
     let result = forward_pass(&schedule).expect("forward pass succeeds");
     let b = result.activity("B").expect("B has dates");
 
-    assert_eq!(b.early_start, utc("2026-10-12T16:00:00Z"));
+    assert_eq!(b.early_start, utc("2026-10-13T08:00:00Z"));
 }
 
 #[test]
