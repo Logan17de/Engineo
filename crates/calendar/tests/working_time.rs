@@ -165,19 +165,13 @@ fn spring_dst_transition_uses_real_elapsed_working_time() {
 
     assert_eq!(
         calendar
-            .working_minutes_between(
-                utc("2026-03-29T00:00:00Z"),
-                utc("2026-03-29T03:00:00Z"),
-            )
+            .working_minutes_between(utc("2026-03-29T00:00:00Z"), utc("2026-03-29T03:00:00Z"),)
             .expect("duration calculates"),
         180
     );
     assert_eq!(
         calendar
-            .add_work_duration(
-                utc("2026-03-29T00:00:00Z"),
-                WorkMinutes::new(180),
-            )
+            .add_work_duration(utc("2026-03-29T00:00:00Z"), WorkMinutes::new(180),)
             .expect("duration can be added"),
         utc("2026-03-29T03:00:00Z")
     );
@@ -196,10 +190,7 @@ fn fall_dst_transition_counts_repeated_hour_once_per_real_hour() {
 
     assert_eq!(
         calendar
-            .working_minutes_between(
-                utc("2026-10-24T23:00:00Z"),
-                utc("2026-10-25T04:00:00Z"),
-            )
+            .working_minutes_between(utc("2026-10-24T23:00:00Z"), utc("2026-10-25T04:00:00Z"),)
             .expect("duration calculates"),
         300
     );
