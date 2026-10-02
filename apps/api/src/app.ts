@@ -3,6 +3,7 @@ import rateLimit from "@fastify/rate-limit";
 import Fastify, { type FastifyError, type FastifyInstance } from "fastify";
 import type { Database } from "./db/client.js";
 import { registerAuthRoutes } from "./security/auth-routes.js";
+import { validateSecurityConfiguration } from "./security/config.js";
 import { registerSecurityHeaders } from "./security/headers.js";
 import { LoginRateLimiter, loginRateLimitStore } from "./security/rate-limit.js";
 
@@ -11,6 +12,7 @@ export interface BuildAppOptions {
 }
 
 export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
+  if (options.database) validateSecurityConfiguration();
   const app = Fastify({
     logger: process.env.NODE_ENV !== "test",
     bodyLimit: 1024 * 1024,

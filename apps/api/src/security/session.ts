@@ -124,10 +124,12 @@ export async function validateCsrf(
   return equalHex(expected, sha256Hex(csrfToken));
 }
 
-export async function revokeSession(db: DatabaseExecutor, sessionId: string): Promise<void> {
-  await db`
+export async function revokeSession(db: DatabaseExecutor, sessionId: string): Promise<boolean> {
+  const rows = await db`
     UPDATE auth_sessions
-    SET revoked_at = COALESCE(revoked_at, now())
-    WHERE id = ${sessionId}
+    SET revoked_at = now()
+    WHERE id = ${sessionId} AND revoked_at IS NULL
+    RETURNING id
   `;
+  return rows.length === 1;
 }
