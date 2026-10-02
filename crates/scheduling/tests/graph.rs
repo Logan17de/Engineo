@@ -1,6 +1,4 @@
-use engineo_project_model::{
-    Activity, ActivityKind, Relationship, RelationshipType,
-};
+use engineo_project_model::{Activity, ActivityKind, Relationship, RelationshipType};
 use engineo_scheduling::{GraphError, ScheduleGraph};
 
 fn activity(id: &str) -> Activity {
