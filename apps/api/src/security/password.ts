@@ -54,9 +54,12 @@ export async function verifyPassword(password: string, encoded: string): Promise
     !Number.isSafeInteger(cost) ||
     !Number.isSafeInteger(blockSize) ||
     !Number.isSafeInteger(parallelization) ||
-    cost <= 0 ||
-    blockSize <= 0 ||
-    parallelization <= 0
+    cost < 16_384 ||
+    cost > 65_536 ||
+    blockSize < 1 ||
+    blockSize > 16 ||
+    parallelization < 1 ||
+    parallelization > 4
   ) {
     return false;
   }
