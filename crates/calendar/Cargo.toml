@@ -6,5 +6,10 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[dependencies]
+chrono = { version = "0.4.45", default-features = false, features = ["std"] }
+chrono-tz = "0.10.4"
+engineo-project-model = { path = "../project-model" }
+
 [lints]
 workspace = true
