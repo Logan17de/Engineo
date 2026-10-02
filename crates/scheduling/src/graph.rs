@@ -85,9 +85,7 @@ impl ScheduleGraph {
             let successor = index_by_id
                 .get(&relationship.successor_id)
                 .copied()
-                .ok_or_else(|| {
-                    GraphError::MissingSuccessor(relationship.successor_id.clone())
-                })?;
+                .ok_or_else(|| GraphError::MissingSuccessor(relationship.successor_id.clone()))?;
 
             edges.insert((predecessor, successor));
         }
