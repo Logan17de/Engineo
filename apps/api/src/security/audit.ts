@@ -13,10 +13,7 @@ export interface AuditEventInput {
   payload?: Record<string, unknown>;
 }
 
-export async function appendAuditEvent(
-  db: Database,
-  event: AuditEventInput,
-): Promise<void> {
+export async function appendAuditEvent(db: Database, event: AuditEventInput): Promise<void> {
   await db`
     INSERT INTO audit_events (
       id, organization_id, actor_type, actor_id, action,
