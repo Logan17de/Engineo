@@ -56,8 +56,8 @@ export class ProjectRepository {
       return null;
     }
 
-    const [settingsRows, calendarRows, wbsRows, activityRows, relationshipRows] =
-      await Promise.all([
+    const [settingsRows, calendarRows, wbsRows, activityRows, relationshipRows] = await Promise.all(
+      [
         this.db`
           SELECT planned_start, data_date, required_finish, default_calendar_id,
                  critical_float_threshold_minutes, lag_calendar_policy, project_finish_policy
@@ -93,7 +93,8 @@ export class ProjectRepository {
             AND project_id = ${projectId}
           ORDER BY predecessor_id, successor_id, relationship_type, lag_minutes
         `,
-      ]);
+      ],
+    );
 
     const settings = settingsRows[0];
     if (!settings) {
@@ -115,14 +116,19 @@ export class ProjectRepository {
       },
       scheduleOptions: {
         criticalFloatThresholdMinutes: Number(settings.critical_float_threshold_minutes),
-        lagCalendarPolicy: settings.lag_calendar_policy as EngineProjectInputV1["scheduleOptions"]["lagCalendarPolicy"],
-        projectFinishPolicy: settings.project_finish_policy as EngineProjectInputV1["scheduleOptions"]["projectFinishPolicy"],
+        lagCalendarPolicy:
+          settings.lag_calendar_policy as EngineProjectInputV1["scheduleOptions"]["lagCalendarPolicy"],
+        projectFinishPolicy:
+          settings.project_finish_policy as EngineProjectInputV1["scheduleOptions"]["projectFinishPolicy"],
       },
       calendars: calendarRows.map((row) => ({
         id: String(row.id),
         name: String(row.name),
         timeZone: String(row.time_zone),
-        ...(row.definition as Omit<EngineProjectInputV1["calendars"][number], "id" | "name" | "timeZone">),
+        ...(row.definition as Omit<
+          EngineProjectInputV1["calendars"][number],
+          "id" | "name" | "timeZone"
+        >),
       })),
       wbs: wbsRows.map((row) => ({
         id: String(row.id),
@@ -138,7 +144,8 @@ export class ProjectRepository {
         kind: row.kind as EngineProjectInputV1["activities"][number]["kind"],
         durationMinutes: Number(row.duration_minutes),
         calendarId: String(row.calendar_id),
-        constraints: row.constraints as EngineProjectInputV1["activities"][number]["constraints"],
+        constraints:
+          row.constraints as EngineProjectInputV1["activities"][number]["constraints"],
       })),
       relationships: relationshipRows.map((row) => ({
         predecessorId: String(row.predecessor_id),
