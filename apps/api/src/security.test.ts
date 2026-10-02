@@ -4,8 +4,8 @@ import test from "node:test";
 import { buildApp } from "./app.js";
 import { createDatabase } from "./db/client.js";
 import { migrateDatabase } from "./db/migrate.js";
-import { authorizeProject } from "./security/rbac.js";
 import { hashPassword, verifyPassword } from "./security/password.js";
+import { authorizeProject } from "./security/rbac.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 
