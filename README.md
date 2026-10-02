@@ -37,6 +37,8 @@ See:
 - [Roadmap](docs/ROADMAP.md)
 - [Scheduling engine specification](docs/SCHEDULING_ENGINE.md)
 - [Engineering principles](docs/ENGINEERING.md)\n- [Development setup](docs/DEVELOPMENT.md)
+- [Security & trust architecture](docs/SECURITY.md)
+- [Threat model](docs/THREAT_MODEL.md)
 
 ## License
 
