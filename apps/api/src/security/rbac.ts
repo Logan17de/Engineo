@@ -55,8 +55,7 @@ export async function authorizeProject(
     LIMIT 1
   `;
 
-  const organizationRole =
-    organizationRows[0]?.role as OrganizationRole | undefined;
+  const organizationRole = organizationRows[0]?.role as OrganizationRole | undefined;
 
   if (!organizationRole) {
     return {
@@ -66,10 +65,7 @@ export async function authorizeProject(
     };
   }
 
-  if (
-    organizationRole === "owner" ||
-    organizationRole === "admin"
-  ) {
+  if (organizationRole === "owner" || organizationRole === "admin") {
     return {
       allowed: organizationPermissions[organizationRole].has(permission),
       organizationRole,
