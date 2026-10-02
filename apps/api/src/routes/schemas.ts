@@ -1,4 +1,4 @@
-import { WEEKDAYS } from "@engineo/contracts";
+import { MAX_WORK_MINUTES, WEEKDAYS } from "@engineo/contracts";
 
 export const uuid = {
   type: "string",
@@ -67,8 +67,8 @@ const relationshipProperties = {
   type: { enum: ["FS", "SS", "FF", "SF"] },
   lagMinutes: {
     type: "integer",
-    minimum: -Number.MAX_SAFE_INTEGER,
-    maximum: Number.MAX_SAFE_INTEGER,
+    minimum: -MAX_WORK_MINUTES,
+    maximum: MAX_WORK_MINUTES,
   },
 };
 const wbsProperties = {

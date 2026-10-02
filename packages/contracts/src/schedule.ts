@@ -1,4 +1,5 @@
 export const ENGINE_CONTRACT_VERSION = 1 as const;
+export const MAX_WORK_MINUTES = 4_294_967_295;
 
 export const WEEKDAYS = [
   "MONDAY",

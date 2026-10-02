@@ -2,6 +2,7 @@ import {
   type CalendarV1,
   ENGINE_CONTRACT_VERSION,
   type EngineProjectInputV1,
+  MAX_WORK_MINUTES,
   WEEKDAYS,
   type WorkIntervalV1,
 } from "./schedule.js";
@@ -364,12 +365,15 @@ export function validateScheduleInputV1(input: EngineProjectInputV1): ScheduleVa
         "An activity cannot have a relationship to itself.",
       );
     }
-    if (!Number.isSafeInteger(relationship.lagMinutes)) {
+    if (
+      !Number.isSafeInteger(relationship.lagMinutes) ||
+      Math.abs(relationship.lagMinutes) > MAX_WORK_MINUTES
+    ) {
       addIssue(
         issues,
         "INVALID_LAG",
         `${base}.lagMinutes`,
-        "Relationship lag must be a safe integer number of working minutes.",
+        `Relationship lag must be an integer between -${MAX_WORK_MINUTES} and ${MAX_WORK_MINUTES} working minutes.`,
       );
     }
   }

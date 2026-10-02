@@ -5,6 +5,24 @@ use serde_json::{Value, json};
 const FIXTURE: &str = include_str!("../../../fixtures/contracts/v1/minimal-project.json");
 
 #[test]
+fn signed_lag_boundaries_are_validated_before_calendar_arithmetic() {
+    let mut fixture: Value = serde_json::from_str(FIXTURE).unwrap();
+    for sign in [-1_i64, 1_i64] {
+        fixture["relationships"][0]["lagMinutes"] = json!(sign * i64::from(u32::MAX));
+        assert!(parse_schedule_json(&fixture.to_string()).is_ok());
+        fixture["relationships"][0]["lagMinutes"] = json!(sign * (i64::from(u32::MAX) + 1));
+        assert!(matches!(
+            parse_schedule_json(&fixture.to_string()),
+            Err(JsonBridgeError::Calculation(
+                engineo_scheduling::ScheduleError::LagOutOfRange(_)
+            ))
+        ));
+    }
+    fixture["relationships"][0]["lagMinutes"] = json!(i64::MIN);
+    assert!(parse_schedule_json(&fixture.to_string()).is_err());
+}
+
+#[test]
 fn versioned_json_bridge_has_exact_dates_and_stable_output() {
     let output = calculate_schedule_json(FIXTURE).expect("fixture must calculate");
     let result: Value = serde_json::from_str(&output).expect("output must be JSON");

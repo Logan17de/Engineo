@@ -75,3 +75,9 @@ This is a process wrapper, not an OS sandbox or distributed job system. Tenant
 quotas across replicas, hardened runtime/deployment, Rust binary provenance,
 production ingress trust, durable job/result persistence, full role matrix,
 MFA/SSO and operational release gates remain in `docs/ACCEPTANCE.md`.
+
+Relationship lag is a signed integer with magnitude at most `4294967295`
+working minutes, matching Rust's working-duration representation. Shapes beyond
+that bound return 400 before mutation. Semantic validation also rejects legacy
+persisted values before calculation. Calendar availability and supported date
+arithmetic remain separate calculation validations.

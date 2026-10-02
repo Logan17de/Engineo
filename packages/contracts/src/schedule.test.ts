@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   type EngineProjectInputV1,
+  MAX_WORK_MINUTES,
   serializeScheduleInputV1,
   validateScheduleInputV1,
 } from "./index.js";
@@ -80,6 +81,18 @@ function validInput(): EngineProjectInputV1 {
     ],
   };
 }
+
+test("signed relationship lag agrees with the engine's u32 magnitude range", () => {
+  for (const sign of [-1, 1]) {
+    const input = validInput();
+    const relationship = input.relationships[0];
+    assert.ok(relationship);
+    relationship.lagMinutes = sign * MAX_WORK_MINUTES;
+    assert.equal(validateScheduleInputV1(input).valid, true);
+    relationship.lagMinutes = sign * (MAX_WORK_MINUTES + 1);
+    assert.ok(validateScheduleInputV1(input).issues.some((issue) => issue.code === "INVALID_LAG"));
+  }
+});
 
 test("valid M0 input passes semantic validation", () => {
   const result = validateScheduleInputV1(validInput());

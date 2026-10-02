@@ -62,3 +62,22 @@ gpt-6.1-sol Max independent review found process admission, time-zone mismatch
 and disconnect defects; each was fixed and tested. Review found no remaining
 concrete implementation blocker. Browser 1k/accessibility/import/export journeys,
 full permission matrix, measured RSS and deployment/backup/proxy gates remain.
+
+## Lag contract delta after PM review
+
+API shape and semantic gates and the Rust JSON parser now share the signed
+working-minute magnitude range `[-4294967295, 4294967295]`. Values one minute
+beyond either edge fail before save; legacy out-of-range database rows fail
+before a run starts. Positive/negative 480-minute lags save and run against Rust
+with exact finish assertions. Numeric edge values save and pass JSON parsing;
+the API edge-run fixtures intentionally use an empty calendar and assert its
+bounded `NoWorkingTime` failure, avoiding millions of calendar iterations in CI.
+This does not claim that every calendar/date combination at a numeric edge has
+an attainable finish within operational limits.
+
+Delta validation in the same cloud environment: `pnpm check:ts` passes with
+7 contract, 35 API and 2 SARIF-gate tests, no skips, and both builds. Rust
+fmt/Clippy/50 active tests pass; the dedicated scale benchmark remains separately
+measured and intentionally ignored by the routine suite. Dependency audit at
+moderate threshold reports zero findings. GitHub exact-head checks must run
+again on this new delta; previous PM approval applies to the prior API SHA.

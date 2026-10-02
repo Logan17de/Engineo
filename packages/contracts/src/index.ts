@@ -9,6 +9,7 @@ export {
   ENGINE_CONTRACT_VERSION,
   type EngineProjectInputV1,
   type LagCalendarPolicyV1,
+  MAX_WORK_MINUTES,
   type ProjectFinishPolicyV1,
   type RelationshipInputV1,
   type RelationshipTypeV1,

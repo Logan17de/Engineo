@@ -310,6 +310,11 @@ fn activity_from_dto(dto: ActivityDto) -> Result<Activity, JsonBridgeError> {
 }
 
 fn relationship_from_dto(dto: RelationshipDto) -> Result<Relationship, JsonBridgeError> {
+    if dto.lag_minutes.unsigned_abs() > u64::from(u32::MAX) {
+        return Err(JsonBridgeError::Calculation(ScheduleError::LagOutOfRange(
+            dto.lag_minutes,
+        )));
+    }
     Ok(Relationship {
         predecessor_id: dto.predecessor_id,
         successor_id: dto.successor_id,
