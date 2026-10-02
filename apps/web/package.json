@@ -1,0 +1,23 @@
+{
+  "name": "@engineo/web",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node -e \"console.log('web tests: none yet')\""
+  },
+  "dependencies": {
+    "@engineo/contracts": "workspace:*",
+    "next": "16.3.8",
+    "react": "19.2.0",
+    "react-dom": "19.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "24.5.2",
+    "@types/react": "19.2.2",
+    "@types/react-dom": "19.2.2",
+    "typescript": "workspace:*"
+  }
+}
