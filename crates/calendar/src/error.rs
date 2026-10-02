@@ -28,16 +28,27 @@ impl Display for CalendarError {
             Self::OverlappingIntervals => write!(formatter, "work intervals overlap"),
             Self::DuplicateWeekday => write!(formatter, "calendar contains a duplicate weekday"),
             Self::DuplicateExceptionDate(value) => {
-                write!(formatter, "calendar contains duplicate exception date: {value}")
+                write!(
+                    formatter,
+                    "calendar contains duplicate exception date: {value}"
+                )
             }
             Self::NonexistentLocalBoundary(value) => {
-                write!(formatter, "calendar boundary does not exist in its time zone: {value}")
+                write!(
+                    formatter,
+                    "calendar boundary does not exist in its time zone: {value}"
+                )
             }
             Self::DateOutOfRange => {
-                write!(formatter, "calendar date arithmetic exceeded supported range")
+                write!(
+                    formatter,
+                    "calendar date arithmetic exceeded supported range"
+                )
             }
             Self::NoWorkingTime => write!(formatter, "no working time found within search horizon"),
-            Self::DurationOutOfRange => write!(formatter, "working duration exceeded supported range"),
+            Self::DurationOutOfRange => {
+                write!(formatter, "working duration exceeded supported range")
+            }
         }
     }
 }
