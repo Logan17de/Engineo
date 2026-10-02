@@ -17,9 +17,7 @@ function positiveInteger(name: string, value: string | undefined, fallback: numb
   return parsed;
 }
 
-export function databaseConfigFromEnv(
-  env: NodeJS.ProcessEnv = process.env,
-): DatabaseConfig {
+export function databaseConfigFromEnv(env: NodeJS.ProcessEnv = process.env): DatabaseConfig {
   const url = env.DATABASE_URL;
   if (!url) {
     throw new Error("DATABASE_URL is required");
