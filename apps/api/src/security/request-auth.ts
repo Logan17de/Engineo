@@ -52,10 +52,7 @@ export async function requireCsrf(
   return true;
 }
 
-export function requireAllowedOrigin(
-  request: FastifyRequest,
-  reply: FastifyReply,
-): boolean {
+export function requireAllowedOrigin(request: FastifyRequest, reply: FastifyReply): boolean {
   const expected = process.env.APP_ORIGIN;
   const origin = request.headers.origin;
 
