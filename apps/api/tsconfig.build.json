@@ -6,7 +6,10 @@
     "outDir": "dist",
     "rootDir": "src",
     "declaration": true,
-    "sourceMap": true
+    "sourceMap": true,
+    "paths": {
+      "@engineo/contracts": ["../../packages/contracts/dist/index.d.ts"]
+    }
   },
   "exclude": ["src/**/*.test.ts"]
 }
