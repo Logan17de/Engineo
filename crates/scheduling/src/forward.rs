@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
@@ -5,8 +6,8 @@ use std::fmt::{Display, Formatter};
 use chrono::{DateTime, Utc};
 use engineo_calendar::{CalendarError, CompiledCalendar, WorkMinutes};
 use engineo_project_model::{
-    Activity, ActivityId, CalendarId, LagCalendarPolicy, Relationship, RelationshipType,
-    ScheduleInput,
+    Activity, ActivityConstraint, ActivityId, CalendarId, ConstraintType, LagCalendarPolicy,
+    Relationship, RelationshipType, ScheduleInput,
 };
 
 use crate::{GraphError, ScheduleGraph};
@@ -22,6 +23,10 @@ pub enum ScheduleError {
     MissingSuccessorDates(ActivityId),
     InvalidProjectStart(String),
     InvalidRequiredFinish(String),
+    InvalidConstraintInstant {
+        activity_id: ActivityId,
+        value: String,
+    },
     LagOutOfRange(i64),
 }
 
@@ -44,6 +49,12 @@ impl Display for ScheduleError {
             }
             Self::InvalidRequiredFinish(value) => {
                 write!(formatter, "invalid RFC 3339 required finish: {value}")
+            }
+            Self::InvalidConstraintInstant { activity_id, value } => {
+                write!(
+                    formatter,
+                    "activity {activity_id} has invalid RFC 3339 constraint instant: {value}"
+                )
             }
             Self::LagOutOfRange(value) => {
                 write!(
@@ -70,16 +81,33 @@ impl From<CalendarError> for ScheduleError {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DrivingCause {
+    ProjectStart,
+    Relationship {
+        predecessor_id: ActivityId,
+        relationship_type: RelationshipType,
+        lag_minutes: i64,
+    },
+    Constraint {
+        constraint_type: ConstraintType,
+        instant_rfc3339: String,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EarlyDates {
     pub activity_id: ActivityId,
     pub early_start: DateTime<Utc>,
     pub early_finish: DateTime<Utc>,
+    pub driving_causes: Vec<DrivingCause>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ForwardPassResult {
     pub activities: BTreeMap<ActivityId, EarlyDates>,
     pub project_finish: DateTime<Utc>,
+    pub controlling_finish_activity: Option<ActivityId>,
+    pub controlling_path: Vec<ActivityId>,
 }
 
 impl ForwardPassResult {
@@ -121,6 +149,7 @@ pub fn forward_pass(input: &ScheduleInput) -> Result<ForwardPassResult, Schedule
             .ok_or_else(|| ScheduleError::MissingCalendar(activity.calendar_id.clone()))?;
 
         let mut early_start = activity_calendar.next_work_instant(project_start)?;
+        let mut driving_causes = vec![DrivingCause::ProjectStart];
 
         if let Some(relationships) = incoming.get(activity_id) {
             for relationship in relationships {
@@ -155,9 +184,25 @@ pub fn forward_pass(input: &ScheduleInput) -> Result<ForwardPassResult, Schedule
                     lag_calendar,
                 )?;
 
-                early_start = early_start.max(candidate);
+                record_bound(
+                    &mut early_start,
+                    &mut driving_causes,
+                    candidate,
+                    DrivingCause::Relationship {
+                        predecessor_id: relationship.predecessor_id.clone(),
+                        relationship_type: relationship.relationship_type,
+                        lag_minutes: relationship.lag_minutes,
+                    },
+                );
             }
         }
+
+        apply_lower_constraints(
+            activity,
+            activity_calendar,
+            &mut early_start,
+            &mut driving_causes,
+        )?;
 
         early_start = activity_calendar.next_work_instant(early_start)?;
         let early_finish = activity_calendar
@@ -169,6 +214,7 @@ pub fn forward_pass(input: &ScheduleInput) -> Result<ForwardPassResult, Schedule
                 activity_id: activity.id.clone(),
                 early_start,
                 early_finish,
+                driving_causes,
             },
         );
     }
@@ -178,11 +224,112 @@ pub fn forward_pass(input: &ScheduleInput) -> Result<ForwardPassResult, Schedule
         .map(|dates| dates.early_finish)
         .max()
         .unwrap_or(project_start);
+    let controlling_finish_activity = calculated
+        .iter()
+        .find(|(_, dates)| dates.early_finish == project_finish)
+        .map(|(activity_id, _)| activity_id.clone());
+    let controlling_path = controlling_finish_activity
+        .as_deref()
+        .map_or_else(Vec::new, |finish_activity| {
+            trace_controlling_path(finish_activity, &calculated)
+        });
 
     Ok(ForwardPassResult {
         activities: calculated,
         project_finish,
+        controlling_finish_activity,
+        controlling_path,
     })
+}
+
+fn apply_lower_constraints(
+    activity: &Activity,
+    calendar: &CompiledCalendar,
+    early_start: &mut DateTime<Utc>,
+    driving_causes: &mut Vec<DrivingCause>,
+) -> Result<(), ScheduleError> {
+    let mut constraints = activity.constraints.iter().collect::<Vec<_>>();
+    constraints.sort_by(|left, right| {
+        constraint_rank(left.constraint_type)
+            .cmp(&constraint_rank(right.constraint_type))
+            .then_with(|| left.instant_rfc3339.cmp(&right.instant_rfc3339))
+    });
+
+    for constraint in constraints {
+        let instant = parse_constraint_instant(activity, constraint)?;
+
+        let candidate = match constraint.constraint_type {
+            ConstraintType::StartOnOrAfter => Some(calendar.next_work_instant(instant)?),
+            ConstraintType::FinishOnOrAfter => Some(finish_bound_to_start(
+                calendar,
+                instant,
+                activity.duration_minutes,
+            )?),
+            ConstraintType::StartOnOrBefore | ConstraintType::FinishOnOrBefore => None,
+        };
+
+        if let Some(candidate) = candidate {
+            record_bound(
+                early_start,
+                driving_causes,
+                candidate,
+                DrivingCause::Constraint {
+                    constraint_type: constraint.constraint_type,
+                    instant_rfc3339: constraint.instant_rfc3339.clone(),
+                },
+            );
+        }
+    }
+
+    Ok(())
+}
+
+fn record_bound(
+    current: &mut DateTime<Utc>,
+    causes: &mut Vec<DrivingCause>,
+    candidate: DateTime<Utc>,
+    cause: DrivingCause,
+) {
+    match candidate.cmp(current) {
+        Ordering::Greater => {
+            *current = candidate;
+            causes.clear();
+            causes.push(cause);
+        }
+        Ordering::Equal => {
+            if !causes.contains(&cause) {
+                causes.push(cause);
+            }
+        }
+        Ordering::Less => {}
+    }
+}
+
+fn trace_controlling_path(
+    finish_activity: &str,
+    calculated: &BTreeMap<ActivityId, EarlyDates>,
+) -> Vec<ActivityId> {
+    let mut reversed = Vec::new();
+    let mut current = finish_activity.to_owned();
+
+    loop {
+        reversed.push(current.clone());
+
+        let Some(dates) = calculated.get(&current) else {
+            break;
+        };
+        let Some(predecessor) = dates.driving_causes.iter().find_map(|cause| match cause {
+            DrivingCause::Relationship { predecessor_id, .. } => Some(predecessor_id.clone()),
+            DrivingCause::ProjectStart | DrivingCause::Constraint { .. } => None,
+        }) else {
+            break;
+        };
+
+        current = predecessor;
+    }
+
+    reversed.reverse();
+    reversed
 }
 
 pub(crate) fn compile_calendars(
@@ -270,7 +417,7 @@ fn relationship_start_bound(
     }
 }
 
-fn finish_bound_to_start(
+pub(crate) fn finish_bound_to_start(
     calendar: &CompiledCalendar,
     finish_bound: DateTime<Utc>,
     duration_minutes: u32,
@@ -289,6 +436,18 @@ fn finish_bound_to_start(
     }
 
     Ok(calendar.next_work_instant(finish_bound)?)
+}
+
+pub(crate) fn parse_constraint_instant(
+    activity: &Activity,
+    constraint: &ActivityConstraint,
+) -> Result<DateTime<Utc>, ScheduleError> {
+    DateTime::parse_from_rfc3339(&constraint.instant_rfc3339)
+        .map(|value| value.with_timezone(&Utc))
+        .map_err(|_| ScheduleError::InvalidConstraintInstant {
+            activity_id: activity.id.clone(),
+            value: constraint.instant_rfc3339.clone(),
+        })
 }
 
 pub(crate) fn shift_by_lag(
@@ -316,5 +475,14 @@ const fn relationship_rank(relationship_type: RelationshipType) -> u8 {
         RelationshipType::StartToStart => 1,
         RelationshipType::FinishToFinish => 2,
         RelationshipType::StartToFinish => 3,
+    }
+}
+
+const fn constraint_rank(constraint_type: ConstraintType) -> u8 {
+    match constraint_type {
+        ConstraintType::StartOnOrAfter => 0,
+        ConstraintType::FinishOnOrAfter => 1,
+        ConstraintType::StartOnOrBefore => 2,
+        ConstraintType::FinishOnOrBefore => 3,
     }
 }
