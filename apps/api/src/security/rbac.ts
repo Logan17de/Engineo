@@ -4,6 +4,7 @@ export type OrganizationRole = "owner" | "admin" | "planner" | "viewer";
 export type ProjectRole = "manager" | "planner" | "viewer";
 export type Permission =
   | "organization.manage"
+  | "project.create"
   | "project.read"
   | "project.write"
   | "schedule.run"
@@ -12,6 +13,7 @@ export type Permission =
 const organizationPermissions: Record<OrganizationRole, ReadonlySet<Permission>> = {
   owner: new Set([
     "organization.manage",
+    "project.create",
     "project.read",
     "project.write",
     "schedule.run",
@@ -19,12 +21,13 @@ const organizationPermissions: Record<OrganizationRole, ReadonlySet<Permission>>
   ]),
   admin: new Set([
     "organization.manage",
+    "project.create",
     "project.read",
     "project.write",
     "schedule.run",
     "project.members.manage",
   ]),
-  planner: new Set(["project.read", "project.write", "schedule.run"]),
+  planner: new Set(["project.create", "project.read", "project.write", "schedule.run"]),
   viewer: new Set(["project.read"]),
 };
 
@@ -93,5 +96,35 @@ export async function authorizeProject(
     allowed,
     organizationRole,
     projectRole: projectRole ?? null,
+  };
+}
+
+export async function authorizeOrganization(
+  db: Database,
+  userId: string,
+  organizationId: string,
+  permission: Permission,
+): Promise<AccessDecision> {
+  const rows = await db`
+    SELECT role
+    FROM organization_memberships
+    WHERE organization_id = ${organizationId}
+      AND user_id = ${userId}
+    LIMIT 1
+  `;
+  const organizationRole = rows[0]?.role as OrganizationRole | undefined;
+
+  if (!organizationRole) {
+    return {
+      allowed: false,
+      organizationRole: null,
+      projectRole: null,
+    };
+  }
+
+  return {
+    allowed: organizationPermissions[organizationRole].has(permission),
+    organizationRole,
+    projectRole: null,
   };
 }

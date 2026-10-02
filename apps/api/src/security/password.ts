@@ -1,8 +1,8 @@
 import {
   randomBytes,
+  type ScryptOptions,
   scrypt as scryptCallback,
   timingSafeEqual,
-  type ScryptOptions,
 } from "node:crypto";
 
 function scrypt(
