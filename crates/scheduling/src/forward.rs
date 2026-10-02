@@ -89,7 +89,9 @@ pub fn forward_pass(input: &ScheduleInput) -> Result<ForwardPassResult, Schedule
     let incoming = incoming_relationships(&input.relationships);
 
     let project_start = DateTime::parse_from_rfc3339(&input.project.planned_start_rfc3339)
-        .map_err(|_| ScheduleError::InvalidProjectStart(input.project.planned_start_rfc3339.clone()))?
+        .map_err(|_| {
+            ScheduleError::InvalidProjectStart(input.project.planned_start_rfc3339.clone())
+        })?
         .with_timezone(&Utc);
 
     let project_calendar = calendars
@@ -117,13 +119,14 @@ pub fn forward_pass(input: &ScheduleInput) -> Result<ForwardPassResult, Schedule
                     .ok_or_else(|| {
                         ScheduleError::MissingActivity(relationship.predecessor_id.clone())
                     })?;
-                let predecessor_dates = calculated
-                    .get(&relationship.predecessor_id)
-                    .ok_or_else(|| {
-                        ScheduleError::MissingPredecessorDates(
-                            relationship.predecessor_id.clone(),
-                        )
-                    })?;
+                let predecessor_dates =
+                    calculated
+                        .get(&relationship.predecessor_id)
+                        .ok_or_else(|| {
+                            ScheduleError::MissingPredecessorDates(
+                                relationship.predecessor_id.clone(),
+                            )
+                        })?;
 
                 let lag_calendar = lag_calendar(
                     input.schedule_options.lag_calendar_policy,
@@ -146,10 +149,8 @@ pub fn forward_pass(input: &ScheduleInput) -> Result<ForwardPassResult, Schedule
         }
 
         early_start = activity_calendar.next_work_instant(early_start)?;
-        let early_finish = activity_calendar.add_work_duration(
-            early_start,
-            WorkMinutes::new(activity.duration_minutes),
-        )?;
+        let early_finish = activity_calendar
+            .add_work_duration(early_start, WorkMinutes::new(activity.duration_minutes))?;
 
         calculated.insert(
             activity.id.clone(),
@@ -205,7 +206,10 @@ fn incoming_relationships<'a>(
         values.sort_by(|left, right| {
             left.predecessor_id
                 .cmp(&right.predecessor_id)
-                .then_with(|| relationship_rank(left.relationship_type).cmp(&relationship_rank(right.relationship_type)))
+                .then_with(|| {
+                    relationship_rank(left.relationship_type)
+                        .cmp(&relationship_rank(right.relationship_type))
+                })
                 .then_with(|| left.lag_minutes.cmp(&right.lag_minutes))
         });
     }
@@ -242,9 +246,7 @@ fn relationship_start_bound(
         RelationshipType::FinishToStart | RelationshipType::FinishToFinish => {
             predecessor.early_finish
         }
-        RelationshipType::StartToStart | RelationshipType::StartToFinish => {
-            predecessor.early_start
-        }
+        RelationshipType::StartToStart | RelationshipType::StartToFinish => predecessor.early_start,
     };
 
     let lagged = shift_by_lag(lag_calendar, anchor, relationship.lag_minutes)?;
@@ -286,8 +288,8 @@ fn shift_by_lag(
     lag_minutes: i64,
 ) -> Result<DateTime<Utc>, ScheduleError> {
     if lag_minutes >= 0 {
-        let minutes = u32::try_from(lag_minutes)
-            .map_err(|_| ScheduleError::LagOutOfRange(lag_minutes))?;
+        let minutes =
+            u32::try_from(lag_minutes).map_err(|_| ScheduleError::LagOutOfRange(lag_minutes))?;
         return Ok(calendar.add_work_duration(anchor, WorkMinutes::new(minutes))?);
     }
 
