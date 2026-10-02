@@ -111,8 +111,14 @@ fn golden_parallel_float_fixture_matches_exact_output() {
     let fixture = load_fixture("parallel-float.json");
     let result = calculate_fixture(&fixture);
 
-    assert_eq!(result.early.project_finish, utc(&fixture.expected.project_finish));
-    assert_eq!(result.early.controlling_path, fixture.expected.controlling_path);
+    assert_eq!(
+        result.early.project_finish,
+        utc(&fixture.expected.project_finish)
+    );
+    assert_eq!(
+        result.early.controlling_path,
+        fixture.expected.controlling_path
+    );
 
     for (activity_id, expected) in &fixture.expected.activities {
         let early = result
@@ -123,7 +129,11 @@ fn golden_parallel_float_fixture_matches_exact_output() {
             .activity_late(activity_id)
             .expect("expected activity must have late dates");
 
-        assert_eq!(early.early_start, utc(&expected.early_start), "{activity_id}");
+        assert_eq!(
+            early.early_start,
+            utc(&expected.early_start),
+            "{activity_id}"
+        );
         assert_eq!(
             early.early_finish,
             utc(&expected.early_finish),
@@ -171,12 +181,7 @@ fn adding_a_predecessor_never_makes_successor_earlier() {
 
         let constrained = schedule(
             baseline.activities.clone(),
-            vec![relationship(
-                "A",
-                "B",
-                RelationshipType::FinishToStart,
-                0,
-            )],
+            vec![relationship("A", "B", RelationshipType::FinishToStart, 0)],
             "2026-10-05T08:00:00Z",
         );
         let constrained_result = calculate_cpm(&constrained).expect("relationship calculates");
@@ -219,8 +224,7 @@ fn calculation_is_invariant_to_input_collection_order() {
 fn calculated_activity_spans_equal_their_working_durations() {
     let input = synthetic_dag(120, DensityProfile::Dense);
     let result = calculate_cpm(&input).expect("schedule calculates");
-    let calendar =
-        CompiledCalendar::compile(&input.calendars[0]).expect("calendar must compile");
+    let calendar = CompiledCalendar::compile(&input.calendars[0]).expect("calendar must compile");
 
     for activity in &input.activities {
         let dates = result
