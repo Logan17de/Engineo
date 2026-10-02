@@ -1,0 +1,23 @@
+# JavaScript
+node_modules/
+.pnpm-store/
+.next/
+dist/
+coverage/
+
+# Rust
+target/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Logs
+*.log

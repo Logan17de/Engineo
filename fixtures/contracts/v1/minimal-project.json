@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "project": {
+    "id": "project-demo",
+    "name": "Engineo contract fixture",
+    "plannedStart": "2026-10-05T08:00:00+09:00",
+    "defaultCalendarId": "calendar-standard"
+  },
+  "activities": [
+    {
+      "id": "A100",
+      "name": "Start project",
+      "durationMinutes": 0,
+      "calendarId": "calendar-standard"
+    },
+    {
+      "id": "A110",
+      "name": "Execute first work package",
+      "durationMinutes": 2400,
+      "calendarId": "calendar-standard"
+    }
+  ],
+  "relationships": [
+    {
+      "predecessorId": "A100",
+      "successorId": "A110",
+      "type": "FS",
+      "lagMinutes": 0
+    }
+  ]
+}

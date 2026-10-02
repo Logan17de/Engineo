@@ -1,0 +1,20 @@
+[workspace]
+resolver = "3"
+members = [
+  "crates/calendar",
+  "crates/project-model",
+  "crates/scheduling",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+license = "UNLICENSED"
+repository = "https://github.com/Logan17de/Engineo"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = "deny"
