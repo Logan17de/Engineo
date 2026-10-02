@@ -257,9 +257,7 @@ fn calculate_free_float(
     Ok(free_float)
 }
 
-fn outgoing_relationships<'a>(
-    relationships: &'a [Relationship],
-) -> BTreeMap<&'a str, Vec<&'a Relationship>> {
+fn outgoing_relationships(relationships: &[Relationship]) -> BTreeMap<&str, Vec<&Relationship>> {
     let mut outgoing = BTreeMap::<&str, Vec<&Relationship>>::new();
 
     for relationship in relationships {
