@@ -166,7 +166,7 @@ fn terminal_late_start(
     duration_minutes: u32,
 ) -> Result<DateTime<Utc>, ScheduleError> {
     if duration_minutes == 0 {
-        return Ok(calendar.previous_work_instant(project_finish)?);
+        return previous_start_instant(calendar, project_finish);
     }
 
     let late_finish = calendar.previous_work_instant(project_finish)?;
@@ -191,7 +191,7 @@ fn predecessor_start_upper_bound(
     match relationship.relationship_type {
         RelationshipType::FinishToStart | RelationshipType::FinishToFinish => {
             if predecessor.duration_minutes == 0 {
-                return Ok(predecessor_calendar.previous_work_instant(predecessor_event_bound)?);
+                return previous_start_instant(predecessor_calendar, predecessor_event_bound);
             }
 
             let finish = predecessor_calendar.previous_work_instant(predecessor_event_bound)?;
@@ -199,9 +199,20 @@ fn predecessor_start_upper_bound(
                 .subtract_work_duration(finish, WorkMinutes::new(predecessor.duration_minutes))?)
         }
         RelationshipType::StartToStart | RelationshipType::StartToFinish => {
-            Ok(predecessor_calendar.previous_work_instant(predecessor_event_bound)?)
+            previous_start_instant(predecessor_calendar, predecessor_event_bound)
         }
     }
+}
+
+fn previous_start_instant(
+    calendar: &CompiledCalendar,
+    bound: DateTime<Utc>,
+) -> Result<DateTime<Utc>, ScheduleError> {
+    if calendar.is_working_instant(bound)? {
+        return Ok(bound);
+    }
+
+    Ok(calendar.previous_work_instant(bound)?)
 }
 
 #[allow(clippy::too_many_arguments)]
