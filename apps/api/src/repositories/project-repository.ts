@@ -144,8 +144,7 @@ export class ProjectRepository {
         kind: row.kind as EngineProjectInputV1["activities"][number]["kind"],
         durationMinutes: Number(row.duration_minutes),
         calendarId: String(row.calendar_id),
-        constraints:
-          row.constraints as EngineProjectInputV1["activities"][number]["constraints"],
+        constraints: row.constraints as EngineProjectInputV1["activities"][number]["constraints"],
       })),
       relationships: relationshipRows.map((row) => ({
         predecessorId: String(row.predecessor_id),
