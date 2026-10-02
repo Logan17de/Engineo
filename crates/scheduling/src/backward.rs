@@ -7,9 +7,7 @@ use engineo_project_model::{
     RelationshipType, ScheduleInput,
 };
 
-use crate::forward::{
-    compile_calendars, lag_calendar, parse_constraint_instant, shift_by_lag,
-};
+use crate::forward::{compile_calendars, lag_calendar, parse_constraint_instant, shift_by_lag};
 use crate::{EarlyDates, ForwardPassResult, ScheduleError, ScheduleGraph, forward_pass};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
