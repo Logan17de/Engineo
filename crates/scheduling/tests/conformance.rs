@@ -228,7 +228,11 @@ fn calculated_activity_spans_equal_their_working_durations() {
             .activity(&activity.id)
             .expect("activity must have early dates");
 
-        assert!(calendar.is_working_instant(dates.early_start)?);
+        assert!(
+            calendar
+                .is_working_instant(dates.early_start)
+                .expect("start membership calculates")
+        );
         assert_eq!(
             calendar
                 .working_minutes_between(dates.early_start, dates.early_finish)
