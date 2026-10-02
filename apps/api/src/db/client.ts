@@ -1,7 +1,7 @@
-import postgres, { type Sql } from "postgres";
+import postgres from "postgres";
 import { type DatabaseConfig, databaseConfigFromEnv } from "./config.js";
 
-export type Database = Sql<Record<string, unknown>>;
+export type Database = ReturnType<typeof postgres>;
 
 export function createDatabase(
   config: DatabaseConfig = databaseConfigFromEnv(),
