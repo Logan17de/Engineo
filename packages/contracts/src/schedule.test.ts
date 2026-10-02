@@ -90,7 +90,7 @@ test("valid M0 input passes semantic validation", () => {
 
 test("validation returns machine-readable duplicate and relationship errors", () => {
   const input = validInput();
-  input.activities.push({ ...input.activities[0] });
+  input.activities.push({ ...input.activities[0]! });
   input.relationships.push({
     predecessorId: "A110",
     successorId: "A110",
@@ -109,7 +109,7 @@ test("validation returns machine-readable duplicate and relationship errors", ()
 test("milestones reject non-zero duration", () => {
   const input = validInput();
   input.activities[0] = {
-    ...input.activities[0],
+    ...input.activities[0]!,
     durationMinutes: 60,
   };
 
