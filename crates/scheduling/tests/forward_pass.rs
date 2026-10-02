@@ -281,7 +281,7 @@ fn successor_calendar_controls_lag_when_configured() {
     let result = forward_pass(&schedule).expect("forward pass succeeds");
     let b = result.activity("B").expect("B has dates");
 
-    assert_eq!(b.early_start, utc("2026-10-11T16:00:00Z"));
+    assert_eq!(b.early_start, utc("2026-10-11T08:00:00Z"));
 }
 
 #[test]
