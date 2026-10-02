@@ -1,7 +1,8 @@
 use chrono::{DateTime, Utc};
 use engineo_project_model::{
-    Activity, ActivityKind, LagCalendarPolicy, ProjectDefinition, ProjectFinishPolicy, Relationship,
-    RelationshipType, ScheduleInput, ScheduleOptions, WbsNode, Weekday, WorkCalendar, WorkInterval,
+    Activity, ActivityKind, LagCalendarPolicy, ProjectDefinition, ProjectFinishPolicy,
+    Relationship, RelationshipType, ScheduleInput, ScheduleOptions, WbsNode, Weekday, WorkCalendar,
+    WorkInterval,
 };
 use engineo_scheduling::calculate_cpm;
 
@@ -129,7 +130,11 @@ fn shorter_parallel_path_receives_total_and_free_float() {
     let c = result.activity_late("C").expect("C has late dates");
 
     assert_eq!(
-        result.early.activity("C").expect("C has early dates").early_start,
+        result
+            .early
+            .activity("C")
+            .expect("C has early dates")
+            .early_start,
         utc("2026-10-06T08:00:00Z")
     );
     assert_eq!(c.late_start, utc("2026-10-06T12:00:00Z"));
@@ -141,11 +146,7 @@ fn shorter_parallel_path_receives_total_and_free_float() {
 #[test]
 fn required_finish_can_create_negative_float() {
     let input = schedule(
-        vec![
-            activity("A", 480),
-            activity("B", 480),
-            activity("C", 480),
-        ],
+        vec![activity("A", 480), activity("B", 480), activity("C", 480)],
         vec![fs("A", "B"), fs("B", "C")],
         ProjectFinishPolicy::RequiredFinish,
         Some("2026-10-07T12:00:00Z"),
