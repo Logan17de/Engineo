@@ -113,7 +113,7 @@ export async function readPlannerSnapshot(
           FROM activities
           WHERE organization_id = ${context.organizationId}
             AND project_id = ${projectId}
-          ORDER BY id
+          ORDER BY sort_order, id
         `,
     db`
           SELECT id, predecessor_id, successor_id, relationship_type, lag_minutes

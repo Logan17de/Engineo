@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   type ActivityKindV1,
   type CalendarV1,
@@ -5,6 +6,7 @@ import {
   isIanaTimeZone,
   isRfc3339Instant,
   type RelationshipTypeV1,
+  serializeScheduleInputV1,
   validateScheduleInputV1,
 } from "@engineo/contracts";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
@@ -285,7 +287,26 @@ export function registerProjectRoutes(
         return;
       }
 
-      await reply.send({ project });
+      const [write, run] = await Promise.all([
+        authorizeProject(
+          db,
+          principal.userId,
+          request.params.organizationId,
+          request.params.projectId,
+          "project.write",
+        ),
+        authorizeProject(
+          db,
+          principal.userId,
+          request.params.organizationId,
+          request.params.projectId,
+          "schedule.run",
+        ),
+      ]);
+      await reply.send({
+        project,
+        permissions: { write: write.allowed, scheduleRun: run.allowed },
+      });
     },
   );
 
@@ -315,6 +336,55 @@ export function registerProjectRoutes(
       }
 
       await reply.send(snapshot);
+    },
+  );
+
+  app.get<{ Params: ProjectParams }>(
+    "/organizations/:organizationId/projects/:projectId/schedule/export",
+    { schema: { params: schemas.projectParams } },
+    async (request, reply) => {
+      const principal = await projectPrincipal(
+        db,
+        request,
+        reply,
+        request.params.organizationId,
+        request.params.projectId,
+        "project.read",
+      );
+      if (!principal) return;
+      const snapshot = await projects.plannerSnapshot(
+        tenantContext(request.params.organizationId, principal.userId, request.id),
+        request.params.projectId,
+      );
+      if (!snapshot) {
+        await reply.code(404).send({ error: "project_not_found" });
+        return;
+      }
+      await appendAuditEvent(db, {
+        organizationId: request.params.organizationId,
+        actorType: "user",
+        actorId: principal.userId,
+        action: "project.export",
+        resourceType: "project",
+        resourceId: request.params.projectId,
+        source: "api",
+        correlationId: request.id,
+        payload: {
+          revision: snapshot.revision,
+          format: "engineo-json-v1",
+          inputHash: createHash("sha256")
+            .update(serializeScheduleInputV1(snapshot.input))
+            .digest("hex"),
+        },
+      });
+      await reply
+        .header("Cache-Control", "no-store")
+        .header(
+          "Content-Disposition",
+          `attachment; filename="engineo-${request.params.projectId}.json"`,
+        )
+        .type("application/json")
+        .send(serializeScheduleInputV1(snapshot.input));
     },
   );
 
@@ -379,7 +449,14 @@ export function registerProjectRoutes(
           resourceId: request.params.projectId,
           source: "api",
           correlationId: request.id,
-          payload: { revision: snapshot.revision },
+          payload: {
+            revision: snapshot.revision,
+            inputHash: createHash("sha256")
+              .update(serializeScheduleInputV1(snapshot.input))
+              .digest("hex"),
+            resultHash: createHash("sha256").update(JSON.stringify(result)).digest("hex"),
+            engineContractVersion: 1,
+          },
         });
 
         await reply.send({ revision: snapshot.revision, result });

@@ -178,6 +178,42 @@ test("Planner boundary regressions use genuine tenant data and database snapshot
     );
 
     await t.test(
+      "canonical export is authorized, private, auditable and excludes auth state",
+      async () => {
+        const response = await app.inject({
+          method: "GET",
+          url: `${url}/schedule/export`,
+          headers,
+        });
+        assert.equal(response.statusCode, 200, response.body);
+        assert.equal(response.headers["cache-control"], "no-store");
+        assert.ok(String(response.headers["content-disposition"]).includes(project.projectId));
+        assert.equal(response.json<{ project: { id: string } }>().project.id, project.projectId);
+        assert.equal(response.body.includes(session.token), false);
+        assert.equal(response.body.includes(session.csrfToken), false);
+        assert.equal(
+          (await app.inject({ method: "GET", url: `${url}/schedule/export` })).statusCode,
+          401,
+        );
+        assert.equal(
+          (
+            await app.inject({
+              method: "GET",
+              url: `/organizations/${otherOrg}/projects/${foreignProject.projectId}/schedule/export`,
+              headers,
+            })
+          ).statusCode,
+          403,
+        );
+        const exports =
+          await db`SELECT payload FROM audit_events WHERE resource_id = ${project.projectId} AND action = 'project.export'`;
+        assert.equal(exports.length, 1);
+        assert.equal(exports[0]?.payload.revision, revision);
+        assert.match(exports[0]?.payload.inputHash, /^[a-f0-9]{64}$/);
+      },
+    );
+
+    await t.test(
       "reader overlapping a committed writer returns its complete older revision",
       async () => {
         const before = await read();
