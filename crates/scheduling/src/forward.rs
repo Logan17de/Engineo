@@ -19,7 +19,9 @@ pub enum ScheduleError {
     MissingCalendar(CalendarId),
     MissingActivity(ActivityId),
     MissingPredecessorDates(ActivityId),
+    MissingSuccessorDates(ActivityId),
     InvalidProjectStart(String),
+    InvalidRequiredFinish(String),
     LagOutOfRange(i64),
 }
 
@@ -34,8 +36,14 @@ impl Display for ScheduleError {
             Self::MissingPredecessorDates(id) => {
                 write!(formatter, "predecessor has no calculated early dates: {id}")
             }
+            Self::MissingSuccessorDates(id) => {
+                write!(formatter, "successor has no calculated late dates: {id}")
+            }
             Self::InvalidProjectStart(value) => {
                 write!(formatter, "invalid RFC 3339 project start: {value}")
+            }
+            Self::InvalidRequiredFinish(value) => {
+                write!(formatter, "invalid RFC 3339 required finish: {value}")
             }
             Self::LagOutOfRange(value) => {
                 write!(formatter, "relationship lag is outside supported range: {value}")
@@ -174,7 +182,7 @@ pub fn forward_pass(input: &ScheduleInput) -> Result<ForwardPassResult, Schedule
     })
 }
 
-fn compile_calendars(
+pub(crate) fn compile_calendars(
     input: &ScheduleInput,
 ) -> Result<BTreeMap<CalendarId, CompiledCalendar>, ScheduleError> {
     let mut calendars = BTreeMap::new();
@@ -217,7 +225,7 @@ fn incoming_relationships<'a>(
     incoming
 }
 
-fn lag_calendar<'a>(
+pub(crate) fn lag_calendar<'a>(
     policy: LagCalendarPolicy,
     predecessor: &Activity,
     successor: &Activity,
@@ -282,7 +290,7 @@ fn finish_bound_to_start(
     Ok(calendar.next_work_instant(finish_bound)?)
 }
 
-fn shift_by_lag(
+pub(crate) fn shift_by_lag(
     calendar: &CompiledCalendar,
     anchor: DateTime<Utc>,
     lag_minutes: i64,
