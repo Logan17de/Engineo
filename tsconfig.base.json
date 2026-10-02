@@ -12,9 +12,6 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "verbatimModuleSyntax": true,
-    "noEmit": true,
-    "paths": {
-      "@engineo/contracts": ["./packages/contracts/src/index.ts"]
-    }
+    "noEmit": true
   }
 }
