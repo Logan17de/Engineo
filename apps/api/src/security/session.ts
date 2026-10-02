@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
-import type { Database } from "../db/client.js";
+import type { DatabaseExecutor } from "../db/client.js";
 
 export interface SessionPrincipal {
   sessionId: string;
@@ -27,7 +27,7 @@ function equalHex(left: string, right: string): boolean {
 }
 
 export async function issueSession(
-  db: Database,
+  db: DatabaseExecutor,
   userId: string,
   email: string,
   displayName: string | null,
@@ -65,7 +65,7 @@ export async function issueSession(
 }
 
 export async function resolveSession(
-  db: Database,
+  db: DatabaseExecutor,
   token: string,
 ): Promise<SessionPrincipal | null> {
   const tokenHash = sha256Hex(token);
@@ -104,7 +104,7 @@ export async function resolveSession(
 }
 
 export async function validateCsrf(
-  db: Database,
+  db: DatabaseExecutor,
   sessionId: string,
   csrfToken: string,
 ): Promise<boolean> {
@@ -124,10 +124,12 @@ export async function validateCsrf(
   return equalHex(expected, sha256Hex(csrfToken));
 }
 
-export async function revokeSession(db: Database, sessionId: string): Promise<void> {
-  await db`
+export async function revokeSession(db: DatabaseExecutor, sessionId: string): Promise<boolean> {
+  const rows = await db`
     UPDATE auth_sessions
-    SET revoked_at = COALESCE(revoked_at, now())
-    WHERE id = ${sessionId}
+    SET revoked_at = now()
+    WHERE id = ${sessionId} AND revoked_at IS NULL
+    RETURNING id
   `;
+  return rows.length === 1;
 }

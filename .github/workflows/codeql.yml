@@ -4,7 +4,6 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
   schedule:
     - cron: "17 3 * * 1"
 
@@ -44,3 +43,16 @@ jobs:
         uses: github/codeql-action/analyze@v4
         with:
           category: "/language:${{ matrix.language }}"
+          output: codeql-results
+
+      - name: Reject high severity security findings
+        run: node scripts/check-codeql.mjs codeql-results
+
+      - name: Retain security evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: codeql-${{ matrix.language }}
+          path: codeql-results/**/*.sarif
+          if-no-files-found: error
+          retention-days: 7

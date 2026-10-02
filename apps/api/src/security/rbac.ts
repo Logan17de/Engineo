@@ -48,10 +48,12 @@ export async function authorizeProject(
   permission: Permission,
 ): Promise<AccessDecision> {
   const organizationRows = await db`
-    SELECT role
-    FROM organization_memberships
-    WHERE organization_id = ${organizationId}
-      AND user_id = ${userId}
+    SELECT om.role
+    FROM organization_memberships om
+    JOIN projects p ON p.organization_id = om.organization_id
+      AND p.id = ${projectId}
+    WHERE om.organization_id = ${organizationId}
+      AND om.user_id = ${userId}
     LIMIT 1
   `;
 
