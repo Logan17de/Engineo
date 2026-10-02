@@ -46,7 +46,10 @@ impl Display for ScheduleError {
                 write!(formatter, "invalid RFC 3339 required finish: {value}")
             }
             Self::LagOutOfRange(value) => {
-                write!(formatter, "relationship lag is outside supported range: {value}")
+                write!(
+                    formatter,
+                    "relationship lag is outside supported range: {value}"
+                )
             }
         }
     }
