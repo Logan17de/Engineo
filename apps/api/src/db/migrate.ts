@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Database } from "./client.js";
 
@@ -27,7 +28,7 @@ export async function migrateDatabase(
     .sort((left, right) => left.localeCompare(right, "en"));
 
   for (const name of names) {
-    const sql = await readFile(new URL(name, `file://${migrationsDirectory}/`), "utf8");
+    const sql = await readFile(join(migrationsDirectory, name), "utf8");
     const checksum = createHash("sha256").update(sql).digest("hex");
     const existing = await db<AppliedMigration[]>`
       SELECT name, checksum_sha256
