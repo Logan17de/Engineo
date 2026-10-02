@@ -7,10 +7,10 @@
     "node": ">=24"
   },
   "scripts": {
-    "dev": "pnpm --parallel --filter @engineo/web --filter @engineo/api dev",
+    "dev": "pnpm --filter @engineo/contracts build && pnpm --parallel --filter @engineo/web --filter @engineo/api dev",
     "build": "pnpm -r --if-present build",
     "typecheck": "pnpm -r --if-present typecheck",
-    "test:ts": "pnpm -r --if-present test",
+    "test:ts": "pnpm --filter @engineo/contracts build && pnpm -r --if-present test",
     "lint": "biome lint .",
     "format": "biome format --write . && cargo fmt --all",
     "format:check": "biome format . && cargo fmt --all -- --check",
