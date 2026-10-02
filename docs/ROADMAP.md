@@ -166,3 +166,97 @@ A professional feature is complete only when it has:
 6. auditability;
 7. tests;
 8. performance characterization.
+
+
+## Cross-cutting security & trust roadmap
+
+Security is not deferred to an enterprise milestone. Each product milestone carries a security exit criterion.
+
+### S0 — Security foundation (runs with M0)
+
+- dependency vulnerability gates for JavaScript and Rust;
+- explicit dependency build-script policy;
+- minimal CI permissions and secret hygiene;
+- initial threat model and security architecture;
+- deterministic engine requires no internet access;
+- secure configuration conventions;
+- tenant-scoped data-access design before persistence;
+- hostile-input posture for future importers.
+
+**Exit:** known high-severity dependency findings fail CI; secrets are not stored in the repository; trust boundaries are documented; auth/persistence work has explicit tenant-isolation requirements.
+
+### S1 — Identity, tenant isolation & audit (runs with M1)
+
+- secure sessions and CSRF protection;
+- organization/project RBAC;
+- tenant-scoped persistence and negative cross-tenant tests;
+- append-oriented audit-event foundation;
+- rate limiting and secure headers;
+- encrypted production transport/storage;
+- secrets manager/KMS integration;
+- automated backup plus restore test.
+
+**Exit:** changing an ID cannot expose another tenant; privileged changes are audited; session revocation works; restore procedure is demonstrated.
+
+### S2 — Secure interoperability & customer networking (runs with M2)
+
+- hostile-file import bounds and isolation;
+- import provenance and hashes;
+- export authorization tests;
+- standard HTTP/HTTPS proxy and NO_PROXY support;
+- shared egress/SSRF policy;
+- configurable enterprise CA trust;
+- direct-egress-disable option for private deployments.
+
+**Exit:** proxy support cannot become an arbitrary network tunnel; malicious import fixtures pass; imports/exports are tenant-safe and auditable.
+
+### S3 — Sensitive controls data (runs with M3)
+
+- authorization for cost/resource data;
+- scoped service/integration credentials;
+- data-classification policy;
+- enhanced export controls;
+- resource-intensive job quotas and abuse limits.
+
+**Exit:** cost/resource access follows explicit permissions and high-volume calculations cannot trivially exhaust shared service capacity.
+
+### S4 — Enterprise identity & private connectivity (runs with M4)
+
+- OIDC federation;
+- SAML/SCIM where required;
+- IP allowlists;
+- mTLS for selected API/integration clients;
+- site-to-site VPN/private endpoint deployment patterns;
+- customer reverse-proxy/WAF guidance;
+- private/self-hosted deployment hardening;
+- SIEM/security-log export.
+
+**Exit:** enterprise identity lifecycle and private connectivity preserve the same authorization/audit guarantees as public SaaS access.
+
+### S5 — AI security (runs with M5)
+
+- authorization-aware AI tools;
+- no blanket AI database credentials;
+- prompt-injection regression suite;
+- scenario-first write behavior;
+- deterministic validation before material changes;
+- explicit approval/permission for scenario application;
+- model-context secret/PII minimization;
+- enterprise provider/data-handling controls.
+
+**Exit:** untrusted prompt/document content cannot grant permissions, cross tenant boundaries, or place unvalidated schedule math into authoritative state.
+
+### S6 — Release assurance & ecosystem security (runs with M6)
+
+- SBOMs;
+- signed releases;
+- build provenance/attestations;
+- hardened deployment images;
+- plugin capability/permission model;
+- public API security review;
+- formal penetration testing cadence;
+- SOC 2/ISO 27001 readiness work if commercially justified.
+
+**Exit:** users can verify release provenance and extensions cannot silently acquire unrestricted platform capabilities.
+
+See `docs/SECURITY.md` and `docs/THREAT_MODEL.md`.
