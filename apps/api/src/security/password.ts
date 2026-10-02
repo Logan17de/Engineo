@@ -33,8 +33,7 @@ export async function hashPassword(password: string): Promise<string> {
 }
 
 export async function verifyPassword(password: string, encoded: string): Promise<boolean> {
-  const [algorithm, costText, blockText, parallelText, saltText, expectedText] =
-    encoded.split("$");
+  const [algorithm, costText, blockText, parallelText, saltText, expectedText] = encoded.split("$");
 
   if (
     algorithm !== "scrypt" ||
