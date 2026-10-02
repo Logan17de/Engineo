@@ -140,3 +140,12 @@ Security integration tests cover:
 - MFA-required password login blocking.
 
 Database-backed test files run serially against the disposable CI PostgreSQL service to avoid schema/migration races.
+
+### Production configuration and repeated logout
+
+Production sessions require an exact HTTPS APP_ORIGIN and Secure cookies; the
+API refuses production startup when those settings are absent or contradictory.
+Origin omission by non-browser clients still requires session-bound CSRF for
+mutations. Concurrent logout changes revoked_at only for the first revocation;
+only that transaction appends audit events. Subsequent already-authenticated
+logout requests clear cookies without duplicating the revocation history.

@@ -6,6 +6,7 @@ import { registerOrganizationRoutes } from "./routes/organizations.js";
 import { registerProjectRoutes } from "./routes/projects.js";
 import { ProcessScheduleRunner, type ScheduleRunner } from "./scheduler/runner.js";
 import { registerAuthRoutes } from "./security/auth-routes.js";
+import { validateSecurityConfiguration } from "./security/config.js";
 import { registerSecurityHeaders } from "./security/headers.js";
 import { LoginRateLimiter, loginRateLimitStore } from "./security/rate-limit.js";
 
@@ -15,6 +16,7 @@ export interface BuildAppOptions {
 }
 
 export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
+  if (options.database) validateSecurityConfiguration();
   const app = Fastify({
     logger: process.env.NODE_ENV !== "test",
     bodyLimit: 1024 * 1024,

@@ -192,8 +192,9 @@ export function registerAuthRoutes(
     }
 
     await db.begin(async (sql) => {
+      const firstRevocation = await revokeSession(sql, principal.sessionId);
+      if (!firstRevocation) return;
       const memberships = await membershipsForUser(sql, principal.userId);
-      await revokeSession(sql, principal.sessionId);
 
       for (const membership of memberships) {
         await appendAuditEvent(sql, {
