@@ -1,7 +1,9 @@
 #![forbid(unsafe_code)]
 
+mod forward;
 mod graph;
 
+pub use forward::{EarlyDates, ForwardPassResult, ScheduleError, forward_pass};
 pub use graph::{GraphError, OpenEnds, ScheduleGraph};
 
 use engineo_calendar::WorkMinutes;
