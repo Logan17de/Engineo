@@ -4,8 +4,8 @@ mod backward;
 mod forward;
 mod graph;
 
-pub use backward::{CpmResult, LateDates, backward_pass, calculate_cpm};
-pub use forward::{EarlyDates, ForwardPassResult, ScheduleError, forward_pass};
+pub use backward::{ConstraintViolation, CpmResult, LateDates, backward_pass, calculate_cpm};
+pub use forward::{DrivingCause, EarlyDates, ForwardPassResult, ScheduleError, forward_pass};
 pub use graph::{GraphError, OpenEnds, ScheduleGraph};
 
 use engineo_calendar::WorkMinutes;
