@@ -72,6 +72,10 @@ impl CompiledCalendar {
         self.time_zone
     }
 
+    pub fn is_working_instant(&self, instant: DateTime<Utc>) -> Result<bool, CalendarError> {
+        Ok(self.containing_interval_end(instant)?.is_some())
+    }
+
     pub fn next_work_instant(
         &self,
         instant: DateTime<Utc>,
