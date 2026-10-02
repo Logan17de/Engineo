@@ -4,20 +4,59 @@
     "id": "project-demo",
     "name": "Engineo contract fixture",
     "plannedStart": "2026-10-05T08:00:00+09:00",
+    "dataDate": "2026-10-05T08:00:00+09:00",
+    "requiredFinish": null,
     "defaultCalendarId": "calendar-standard"
   },
+  "scheduleOptions": {
+    "criticalFloatThresholdMinutes": 0,
+    "lagCalendarPolicy": "SUCCESSOR",
+    "projectFinishPolicy": "CALCULATED"
+  },
+  "calendars": [
+    {
+      "id": "calendar-standard",
+      "name": "Standard 5x8",
+      "timeZone": "Asia/Tokyo",
+      "week": {
+        "MONDAY": [{ "start": "08:00", "end": "17:00" }],
+        "TUESDAY": [{ "start": "08:00", "end": "17:00" }],
+        "WEDNESDAY": [{ "start": "08:00", "end": "17:00" }],
+        "THURSDAY": [{ "start": "08:00", "end": "17:00" }],
+        "FRIDAY": [{ "start": "08:00", "end": "17:00" }],
+        "SATURDAY": [],
+        "SUNDAY": []
+      },
+      "exceptions": []
+    }
+  ],
+  "wbs": [
+    {
+      "id": "wbs-root",
+      "parentId": null,
+      "code": "1",
+      "name": "Project",
+      "sortOrder": 0
+    }
+  ],
   "activities": [
     {
       "id": "A100",
+      "wbsId": "wbs-root",
       "name": "Start project",
+      "kind": "START_MILESTONE",
       "durationMinutes": 0,
-      "calendarId": "calendar-standard"
+      "calendarId": "calendar-standard",
+      "constraints": []
     },
     {
       "id": "A110",
+      "wbsId": "wbs-root",
       "name": "Execute first work package",
+      "kind": "TASK",
       "durationMinutes": 2400,
-      "calendarId": "calendar-standard"
+      "calendarId": "calendar-standard",
+      "constraints": []
     }
   ],
   "relationships": [
