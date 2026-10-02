@@ -36,7 +36,7 @@ See:
 - [Architecture](docs/ARCHITECTURE.md)
 - [Roadmap](docs/ROADMAP.md)
 - [Scheduling engine specification](docs/SCHEDULING_ENGINE.md)
-- [Engineering principles](docs/ENGINEERING.md)
+- [Engineering principles](docs/ENGINEERING.md)\n- [Development setup](docs/DEVELOPMENT.md)
 
 ## License
 
