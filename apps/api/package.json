@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "@engineo/contracts": "workspace:*",
-    "fastify": "5.6.1"
+    "fastify": "5.12.2"
   },
   "devDependencies": {
     "@types/node": "24.5.2",
