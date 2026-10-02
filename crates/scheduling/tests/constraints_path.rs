@@ -184,10 +184,7 @@ fn controlling_path_follows_relationships_that_set_early_dates() {
 
     let result = forward_pass(&input).expect("forward pass succeeds");
 
-    assert_eq!(
-        result.controlling_finish_activity.as_deref(),
-        Some("D")
-    );
+    assert_eq!(result.controlling_finish_activity.as_deref(), Some("D"));
     assert_eq!(
         result.controlling_path,
         vec!["A".to_owned(), "B".to_owned(), "D".to_owned()]
