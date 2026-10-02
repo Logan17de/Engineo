@@ -1,4 +1,4 @@
-import type { Database } from "../db/client.js";
+import type { DatabaseExecutor } from "../db/client.js";
 
 export interface CredentialRecord {
   userId: string;
@@ -16,7 +16,7 @@ export interface MembershipRecord {
 }
 
 export async function credentialByEmail(
-  db: Database,
+  db: DatabaseExecutor,
   email: string,
 ): Promise<CredentialRecord | null> {
   const rows = await db`
@@ -48,7 +48,7 @@ export async function credentialByEmail(
 }
 
 export async function membershipsForUser(
-  db: Database,
+  db: DatabaseExecutor,
   userId: string,
 ): Promise<MembershipRecord[]> {
   const rows = await db`

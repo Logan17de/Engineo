@@ -1,0 +1,80 @@
+# Production acceptance ledger
+
+Engineo is complete only when the exits in `ROADMAP.md` and the eight feature
+criteria (model, deterministic behavior, validation, UI, interoperability, audit,
+tests, performance) are evidenced. A merged milestone issue is not acceptance.
+
+Status vocabulary: **passed** = executed with evidence; **implemented** = code
+exists but acceptance is unverified; **pending** = work remains; **failed** = an
+executed check failed; **never run** = no execution evidence. Update this ledger
+and add an evidence record under `docs/verification/` with each reviewed increment.
+
+## Reconciled baseline — 2026-10-02
+
+| Item | Evidence | Status |
+| --- | --- | --- |
+| Remote main | `eca67208bae54b3b9d22d507f5471ac938c6f380`, rechecked using `git ls-remote` | passed |
+| Identity branch / PR | `f92e17d356d4c753cb4215aac0fb099013d8bf6e`, PR #53 open | implemented |
+| PR #53 TypeScript CI | run `36999446754`, formatting fails in `security.test.ts`; later checks skipped | failed |
+| PR #53 Rust checks/audit | CI job success; local Rust fmt/Clippy and 45 active tests pass | passed |
+| PR #53 CodeQL | run `36999446752` completes; reported high login limiter finding is not clearance | pending |
+| Project API branch | `d2aa71235bb7474dbef0257bab92b3088c791ea2`; no PR, routes not registered, no route tests | implemented |
+| Main web / API | static landing page and `/health`; no Planner acceptance | pending |
+| Saved cloud runtime | Node 24.19.0, pnpm 12.8.0, Rust 1.99.0; PostgreSQL 18.4 on loopback, all under `/workspace` | passed |
+| Publication | Git push dry run succeeds; GitHub connector reads succeed; `gh` token invalid | passed via Git + connector |
+| License | undecided; must be chosen by the owner before public software release | pending owner decision |
+
+## Capability exits
+
+| Milestone | Required acceptance | Current status / next evidence |
+| --- | --- | --- |
+| M0 scheduling | Domain and versioned JSON; graph/cycles; work calendars/DST; FS/SS/FF/SF + lag; early/late dates; float; milestones/constraints; controlling path; deterministic golden/property fixtures | implemented; existing Rust tests pass, full JSON bridge review pending |
+| M0 scale | Document sparse/dense 1k/10k/100k runs with SHA, compiler, CPU, memory, build profile, counts and timings | passed: [measured scale record](verification/2026-10-02-m0-performance.md); RSS and repeated reference-machine budgets pending |
+| S0 supply chain | JS/Rust lockfiles, frozen/locked installs, high vulnerability gates, build-script policy, minimal CI permissions, threat model, no secrets, dependency review | partial; missing JS lockfile and stale Rust lock at baseline, dependency review never run |
+| M1 identity | Org/project creation, sessions/revocation/CSRF/Origin, server RBAC, audit, abuse controls and negative cross-tenant tests | auth repairs tested: [execution record](verification/2026-10-02-auth.md); organization/project UI and full role matrix pending |
+| M1 Planner | WBS CRUD/restructure, virtualized grid and synchronized Gantt, relationships/calendars/constraints, schedule controls, 1k+ activities created/edited/recalculated in browser | pending |
+| M1 data/workflow | Data date + basic progress, filters/group/sort/saved views, project summary, CSV/spreadsheet import/export, explicit failures, data ownership | pending |
+| S1 production controls | Encrypted transport/storage and secret-store integration; automated encrypted backups; measured restore; project authorization and audit | never run operationally; no production credentials or infrastructure |
+| M2 controls | Immutable baselines/variance; richer constraints; suspend/resume, actual/remaining and out-of-sequence policies; longest/multiple paths; diagnostics/date reasons; codes/custom fields | pending |
+| M2 workflow/interchange | Auditable bulk preview/apply, isolated scenarios, network view, look-aheads/layouts/reports; adapter framework and first professional format with round-trip fixtures | pending |
+| S2 networking/import | Hostile-file bounds/isolation/hash/provenance; authorized exports; HTTP(S)_PROXY/NO_PROXY, deliberate CA trust, SSRF/DNS/redirect defenses, disable direct egress | pending; deterministic engine requires no network |
+| M3 capacity | Resources/roles/crews, calendars/rates, assignments/time phases, histograms/overloads; deterministic and scenario leveling with isolated conflict resolution | pending |
+| M3 cost/EVM | Accounts/expenses; budget/actual/remaining/forecast; EVM fixtures/dashboards; trace source-data changes | pending |
+| S3 sensitive data | Explicit resource/cost permissions, scoped credentials, classification/export controls, calculation concurrency/size/tenant quotas | pending |
+| M4 portfolio | Programs/portfolios, cross-project logic, shared pools, reproducible snapshot rollups/milestones/capacity; enterprise codes/calendars | pending |
+| M4 enterprise/S4 | Advanced RBAC, SSO/OIDC (SAML/SCIM if required), approvals/notifications, API/webhooks, reporting/audit/export; IP/mTLS/private/VPN/WAF/self-hosted guidance and SIEM | pending |
+| M5 intelligence | Tool-backed queries/audits/explanations/delay tracing; plan/document/progress suggestions; recovery/resource scenarios; Monte Carlo; executive summaries | pending; no AI-generated math may enter authoritative state |
+| S5 AI assurance | Every tool independently authorizes; untrusted-document prompt-injection tests, scenario-first writes, deterministic validation, explicit apply approval, reversible audit, secret/PII minimization/provider controls | pending |
+| M6 ecosystem | Public API, plugin capability model, SDK/adapters, packaging/observability, localization/accessibility, very-large-portfolio characterization; offline mode optional | pending |
+| S6 release | SBOM/provenance/signing, hardened non-root images, public API review, penetration-test cadence; formal certification only if justified | pending |
+
+## Required scenario matrix
+
+For each material feature, execute normal flow, invalid/malformed input,
+interruption/cancel/retry, repeated click/replay, stale revision, keyboard and
+accessible error/focus behavior, permission denial, cross-tenant ID substitution,
+and export/audit verification. Browser assertions must agree with API persisted
+inputs and Rust calculated output. Mark skipped tests **never run**, not passed.
+
+## Operational release gates
+
+- Reproducible migrations with immutable checksums, concurrent migrator safety,
+  failed-migration rollback and forward-recovery drill.
+- Backup/restore to an empty database, compared project inputs/baselines/audit,
+  measured RPO/RTO, encrypted automation and separately scoped backup identity.
+- Deployment/build/run/rollback runbooks, readiness checks, graceful shutdown,
+  versioned binaries/contracts, bounded jobs with interruption/retry and quotas.
+- CPU/RSS/API/browser latency measurements on named hardware; no universal
+  threshold invented from a single run.
+- Proxy/egress and hostile import regression suites; security/static/dependency
+  gates pass on the exact reviewed SHA. A green CodeQL workflow alone does not
+  prove there are no findings.
+- Owner decisions: license; any paid service, credentials/persistent access,
+  security-sensitive repository setting, and production deployment. These do not
+  block ordinary implementation or local cloud-container validation.
+
+## Review protocol
+
+Create scoped branches and draft PRs. Preserve concurrent branches. Record exact
+SHA, diff, executed/failed/skipped checks and CI/security state before PM review;
+merge only after that review. Continue independent implementation while waiting.

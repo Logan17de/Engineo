@@ -69,9 +69,49 @@ Failed login attempts intentionally do not write tenant audit records because th
 
 ## Rate limiting
 
-M1 includes a conservative in-process login limiter.
+`@fastify/rate-limit` enforces a 60-attempt / five-minute source-IP quota in an
+`onRequest` hook, before parsing or credential lookup. Its custom PostgreSQL store
+uses atomic UPSERTs, so replicas and restarts share the quota. IPv6 addresses are
+normalized to /64 networks; mapped IPv4 addresses normalize to IPv4. Forwarding
+headers are untrusted (`trustProxy: false`). Reverse proxies must retain this
+guarantee; trusted-proxy configuration needs its own explicit deployment review.
 
-This is sufficient for a single API instance and tests. Before horizontally scaling authentication, the limiter must move to a shared backing store or edge gateway so limits remain global.
+A separate eight-attempt / five-minute normalized-account quota prevents rotating
+source IPs from multiplying guesses against one account. Changing email does not
+reset the independent source quota. Both successful and failed attempts consume
+quota; unknown accounts get the same response and dummy password work.
+
+Only SHA-256 bucket keys, saturated counters and expiry times are stored, never
+plaintext emails/IPs. Indexed cleanup removes up to 1,000 expired rows at most
+once per minute per instance during login traffic. Idle deployments can prune
+expired rows operationally. Cleanup failure and storage failure fail closed.
+The API keeps no unbounded bucket Map. Active-key storage under a distributed
+flood still requires deployment ingress capacity controls and monitoring.
+
+429 responses include `Retry-After`. Per-instance password/session work is capped
+at four concurrent logins; saturation returns 503 with `Retry-After: 1`. Requests
+are not queued indefinitely. The body is bounded by the API and login schema.
+Database outages reject login before authentication and do not issue cookies.
+
+Tests exercise concurrent shared counters, quota expiry, cleanup, malformed-body
+counting, forwarded-header spoofing, email/case/whitespace/IP rotation, a second
+API instance, unavailable limiter storage and idempotent work-gate release.
+
+Primary implementation reference: [Fastify rate-limit documentation](https://github.com/fastify/fastify-rate-limit).
+
+Limiter database stages admit at most 16 concurrent operations per API instance,
+including callers sharing an in-flight cleanup. Cleanup advances its successful
+deadline only after the DELETE completes; failures retry immediately. PostgreSQL
+enforces 30-second statement, five-second lock and 30-second idle-transaction
+deadlines. This avoids abandoning uncancelled SQL with a Promise race. The
+hash/session work gate remains four. SHA-256 keys are dictionary-testable
+pseudonyms, not anonymization; ingress quotas and idle retention remain deployment
+controls.
+
+Login/logout session changes and every tenant audit event commit in one
+transaction; cookies are emitted only afterward. Audit-trigger failure fixtures
+verify rollback and retry. Admin/owner project authorization joins the tenant's
+project record before returning an allowed decision.
 
 ## Security headers
 

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import type { Database } from "../db/client.js";
+import type postgres from "postgres";
+import type { DatabaseExecutor } from "../db/client.js";
 
 export interface AuditEventInput {
   organizationId: string;
@@ -10,10 +11,13 @@ export interface AuditEventInput {
   resourceId: string | null;
   source: string;
   correlationId: string | null;
-  payload?: Record<string, unknown>;
+  payload?: Record<string, postgres.JSONValue>;
 }
 
-export async function appendAuditEvent(db: Database, event: AuditEventInput): Promise<void> {
+export async function appendAuditEvent(
+  db: DatabaseExecutor,
+  event: AuditEventInput,
+): Promise<void> {
   await db`
     INSERT INTO audit_events (
       id, organization_id, actor_type, actor_id, action,
