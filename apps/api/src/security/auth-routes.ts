@@ -1,8 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import type { Database } from "../db/client.js";
 import { appendAuditEvent } from "./audit.js";
-import { clearSessionCookies, issuedSessionCookies } from "./cookies.js";
 import { credentialByEmail, membershipsForUser } from "./auth-repository.js";
+import { clearSessionCookies, issuedSessionCookies } from "./cookies.js";
 import { consumePasswordWork, verifyPassword } from "./password.js";
 import {
   LOGIN_ACCOUNT_LIMIT,

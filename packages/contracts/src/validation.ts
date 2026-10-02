@@ -1,10 +1,11 @@
 import {
-  ENGINE_CONTRACT_VERSION,
-  WEEKDAYS,
   type CalendarV1,
+  ENGINE_CONTRACT_VERSION,
   type EngineProjectInputV1,
+  WEEKDAYS,
   type WorkIntervalV1,
 } from "./schedule.js";
+import { ENGINE_TIME_ZONES } from "./time-zones.generated.js";
 
 export type ScheduleValidationCode =
   | "INVALID_SCHEMA_VERSION"
@@ -20,6 +21,7 @@ export type ScheduleValidationCode =
   | "INVALID_SORT_ORDER"
   | "WBS_CYCLE"
   | "SELF_RELATIONSHIP"
+  | "RELATIONSHIP_CYCLE"
   | "INVALID_LAG"
   | "INVALID_FLOAT_THRESHOLD"
   | "MISSING_REQUIRED_FINISH";
@@ -49,17 +51,24 @@ function addIssue(
   issues.push({ code, path, message });
 }
 
-function isRfc3339Instant(value: string): boolean {
-  return RFC3339_PATTERN.test(value) && !Number.isNaN(Date.parse(value));
+function isRealDate(value: string): boolean {
+  if (!DATE_PATTERN.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(parsed.valueOf()) && parsed.toISOString().slice(0, 10) === value;
 }
 
-function isIanaTimeZone(value: string): boolean {
-  try {
-    new Intl.DateTimeFormat("en-US", { timeZone: value }).format();
-    return true;
-  } catch {
-    return false;
-  }
+export function isRfc3339Instant(value: string): boolean {
+  return (
+    RFC3339_PATTERN.test(value) &&
+    isRealDate(value.slice(0, 10)) &&
+    !Number.isNaN(Date.parse(value)) &&
+    /T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/.test(value)
+  );
+}
+
+const supportedTimeZones = new Set(ENGINE_TIME_ZONES);
+export function isIanaTimeZone(value: string): boolean {
+  return supportedTimeZones.has(value);
 }
 
 function validateId(value: string, path: string, issues: ScheduleValidationIssue[]): void {
@@ -149,9 +158,7 @@ function validateCalendar(
   const exceptionDates = new Set<string>();
   for (const [exceptionIndex, exception] of calendar.exceptions.entries()) {
     const path = `${base}.exceptions[${exceptionIndex}]`;
-    const parsedDate = Date.parse(`${exception.date}T00:00:00Z`);
-
-    if (!DATE_PATTERN.test(exception.date) || Number.isNaN(parsedDate)) {
+    if (!isRealDate(exception.date)) {
       addIssue(issues, "INVALID_INSTANT", `${path}.date`, "Exception date must be YYYY-MM-DD.");
     }
 
@@ -171,23 +178,20 @@ function validateCalendar(
 function validateWbsCycles(input: EngineProjectInputV1, issues: ScheduleValidationIssue[]): void {
   const parentById = new Map(input.wbs.map((node) => [node.id, node.parentId]));
 
+  const completed = new Set<string>();
   for (const node of input.wbs) {
-    const visited = new Set<string>([node.id]);
-    let parentId = node.parentId;
-
-    while (parentId !== null) {
-      if (visited.has(parentId)) {
-        addIssue(
-          issues,
-          "WBS_CYCLE",
-          "wbs",
-          `WBS hierarchy contains a cycle involving ${node.id} and ${parentId}.`,
-        );
+    if (completed.has(node.id)) continue;
+    const path = new Set<string>();
+    let id: string | null = node.id;
+    while (id !== null && parentById.has(id) && !completed.has(id)) {
+      if (path.has(id)) {
+        addIssue(issues, "WBS_CYCLE", "wbs", `WBS hierarchy contains a cycle involving ${id}.`);
         break;
       }
-      visited.add(parentId);
-      parentId = parentById.get(parentId) ?? null;
+      path.add(id);
+      id = parentById.get(id) ?? null;
     }
+    for (const visited of path) completed.add(visited);
   }
 }
 
@@ -368,6 +372,34 @@ export function validateScheduleInputV1(input: EngineProjectInputV1): ScheduleVa
         "Relationship lag must be a safe integer number of working minutes.",
       );
     }
+  }
+
+  // Graph validity is input validation; calculated dates/floats remain in Rust.
+  const incoming = new Map(input.activities.map((activity) => [activity.id, 0]));
+  const successors = new Map<string, string[]>();
+  for (const relationship of input.relationships) {
+    if (!incoming.has(relationship.predecessorId) || !incoming.has(relationship.successorId))
+      continue;
+    incoming.set(relationship.successorId, (incoming.get(relationship.successorId) ?? 0) + 1);
+    const edges = successors.get(relationship.predecessorId) ?? [];
+    edges.push(relationship.successorId);
+    successors.set(relationship.predecessorId, edges);
+  }
+  const ready = [...incoming].filter(([, count]) => count === 0).map(([id]) => id);
+  for (let index = 0; index < ready.length; index++) {
+    for (const successor of successors.get(ready[index] ?? "") ?? []) {
+      const count = (incoming.get(successor) ?? 1) - 1;
+      incoming.set(successor, count);
+      if (count === 0) ready.push(successor);
+    }
+  }
+  if (ready.length !== incoming.size) {
+    addIssue(
+      issues,
+      "RELATIONSHIP_CYCLE",
+      "relationships",
+      "Relationships contain a cycle. Remove a link in the loop before saving.",
+    );
   }
 
   return {

@@ -1,21 +1,33 @@
+import {
+  type ActivityKindV1,
+  type CalendarV1,
+  type EngineProjectInputV1,
+  isIanaTimeZone,
+  isRfc3339Instant,
+  type RelationshipTypeV1,
+  validateScheduleInputV1,
+} from "@engineo/contracts";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { validateScheduleInputV1, type ActivityKindV1, type CalendarV1, type RelationshipTypeV1 } from "@engineo/contracts";
 import type { Database } from "../db/client.js";
 import { tenantContext } from "../db/tenant-context.js";
 import {
-  PlannerRepository,
-  RevisionConflictError,
   type CreateActivityInput,
   type CreateCalendarInput,
   type CreateRelationshipInput,
   type CreateWbsInput,
+  PlannerInputError,
+  PlannerNotFoundError,
+  PlannerRepository,
+  RevisionConflictError,
 } from "../repositories/planner-repository.js";
 import { ProjectRepository } from "../repositories/project-repository.js";
-import type { ScheduleRunner } from "../scheduler/runner.js";
+import { ScheduleEngineError, type ScheduleRunner } from "../scheduler/runner.js";
 import { appendAuditEvent } from "../security/audit.js";
 import { authorizeOrganization, authorizeProject, type Permission } from "../security/rbac.js";
 import { requireAllowedOrigin, requireCsrf, requireSession } from "../security/request-auth.js";
 import type { SessionPrincipal } from "../security/session.js";
+
+import * as schemas from "./schemas.js";
 
 interface OrganizationParams {
   organizationId: string;
@@ -135,16 +147,11 @@ async function mutationPrincipal(
 }
 
 function validTimeZone(value: string): boolean {
-  try {
-    new Intl.DateTimeFormat("en-US", { timeZone: value }).format();
-    return true;
-  } catch {
-    return false;
-  }
+  return isIanaTimeZone(value);
 }
 
 function validInstant(value: string): boolean {
-  return /(?:Z|[+-]\d{2}:\d{2})$/.test(value) && !Number.isNaN(Date.parse(value));
+  return isRfc3339Instant(value);
 }
 
 function sendMutationError(reply: FastifyReply, error: unknown): void {
@@ -156,6 +163,23 @@ function sendMutationError(reply: FastifyReply, error: unknown): void {
     return;
   }
 
+  if (error instanceof PlannerInputError) {
+    void reply.code(422).send({ error: "invalid_schedule", issues: error.issues });
+    return;
+  }
+  if (error instanceof PlannerNotFoundError) {
+    void reply.code(404).send({ error: "resource_not_found" });
+    return;
+  }
+  const code = (error as { code?: string }).code;
+  if (code === "23503" || code === "23514") {
+    void reply.code(422).send({ error: "invalid_reference_or_value" });
+    return;
+  }
+  if (code === "23505") {
+    void reply.code(409).send({ error: "duplicate_value" });
+    return;
+  }
   throw error;
 }
 
@@ -169,6 +193,7 @@ export function registerProjectRoutes(
 
   app.get<{ Params: OrganizationParams }>(
     "/organizations/:organizationId/projects",
+    { schema: { params: schemas.organizationParams } },
     async (request, reply) => {
       const principal = await requireSession(db, request, reply);
       if (!principal) {
@@ -185,6 +210,7 @@ export function registerProjectRoutes(
 
   app.post<{ Params: OrganizationParams; Body: CreateProjectBody }>(
     "/organizations/:organizationId/projects",
+    { schema: { params: schemas.organizationParams, body: schemas.createProjectBody } },
     async (request, reply) => {
       if (!requireAllowedOrigin(request, reply)) {
         return;
@@ -215,35 +241,28 @@ export function registerProjectRoutes(
         return;
       }
 
-      const created = await planner.createProject(
-        tenantContext(request.params.organizationId, principal.userId, request.id),
-        {
-          name: request.body.name.trim(),
-          code: request.body.code?.trim() || null,
-          description: request.body.description?.trim() || null,
-          plannedStart: request.body.plannedStart,
-          timeZone: request.body.timeZone,
-        },
-      );
+      try {
+        const created = await planner.createProject(
+          tenantContext(request.params.organizationId, principal.userId, request.id),
+          {
+            name: request.body.name.trim(),
+            code: request.body.code?.trim() || null,
+            description: request.body.description?.trim() || null,
+            plannedStart: request.body.plannedStart,
+            timeZone: request.body.timeZone,
+          },
+        );
 
-      await appendAuditEvent(db, {
-        organizationId: request.params.organizationId,
-        actorType: "user",
-        actorId: principal.userId,
-        action: "project.create",
-        resourceType: "project",
-        resourceId: created.projectId,
-        source: "api",
-        correlationId: request.id,
-        payload: { revision: created.revision },
-      });
-
-      await reply.code(201).send(created);
+        await reply.code(201).send(created);
+      } catch (error) {
+        sendMutationError(reply, error);
+      }
     },
   );
 
   app.get<{ Params: ProjectParams }>(
     "/organizations/:organizationId/projects/:projectId",
+    { schema: { params: schemas.projectParams } },
     async (request, reply) => {
       const principal = await projectPrincipal(
         db,
@@ -272,6 +291,7 @@ export function registerProjectRoutes(
 
   app.get<{ Params: ProjectParams }>(
     "/organizations/:organizationId/projects/:projectId/schedule",
+    { schema: { params: schemas.projectParams } },
     async (request, reply) => {
       const principal = await projectPrincipal(
         db,
@@ -285,7 +305,7 @@ export function registerProjectRoutes(
         return;
       }
 
-      const snapshot = await projects.scheduleSnapshot(
+      const snapshot = await projects.plannerSnapshot(
         tenantContext(request.params.organizationId, principal.userId, request.id),
         request.params.projectId,
       );
@@ -298,8 +318,9 @@ export function registerProjectRoutes(
     },
   );
 
-  app.post<{ Params: ProjectParams }>(
+  app.post<{ Params: ProjectParams; Body: RevisionBody }>(
     "/organizations/:organizationId/projects/:projectId/schedule/run",
+    { schema: { params: schemas.projectParams, body: schemas.revisionBody } },
     async (request, reply) => {
       if (!requireAllowedOrigin(request, reply)) {
         return;
@@ -317,7 +338,7 @@ export function registerProjectRoutes(
         return;
       }
 
-      const snapshot = await projects.scheduleSnapshot(
+      const snapshot = await projects.plannerSnapshot(
         tenantContext(request.params.organizationId, principal.userId, request.id),
         request.params.projectId,
       );
@@ -326,7 +347,11 @@ export function registerProjectRoutes(
         return;
       }
 
-      const validation = validateScheduleInputV1(snapshot);
+      if (snapshot.revision !== request.body.expectedRevision) {
+        sendMutationError(reply, new RevisionConflictError());
+        return;
+      }
+      const validation = validateScheduleInputV1(snapshot.input);
       if (!validation.valid) {
         await reply.code(422).send({
           error: "invalid_schedule",
@@ -335,25 +360,70 @@ export function registerProjectRoutes(
         return;
       }
 
-      const result = await scheduleRunner.calculate(snapshot);
-      await appendAuditEvent(db, {
-        organizationId: request.params.organizationId,
-        actorType: "user",
-        actorId: principal.userId,
-        action: "schedule.run",
-        resourceType: "project",
-        resourceId: request.params.projectId,
-        source: "api",
-        correlationId: request.id,
-        payload: {},
-      });
+      const controller = new AbortController();
+      const abort = () => controller.abort();
+      const disconnected = () => {
+        if (!reply.raw.writableEnded) controller.abort();
+      };
+      request.raw.once("aborted", abort);
+      reply.raw.once("close", disconnected);
+      if (request.raw.aborted || reply.raw.destroyed) controller.abort();
+      try {
+        const result = await scheduleRunner.calculate(snapshot.input, controller.signal);
+        await appendAuditEvent(db, {
+          organizationId: request.params.organizationId,
+          actorType: "user",
+          actorId: principal.userId,
+          action: "schedule.run",
+          resourceType: "project",
+          resourceId: request.params.projectId,
+          source: "api",
+          correlationId: request.id,
+          payload: { revision: snapshot.revision },
+        });
 
-      await reply.send({ result });
+        await reply.send({ revision: snapshot.revision, result });
+      } catch (error) {
+        if (error instanceof ScheduleEngineError) {
+          if (error.statusCode === 503) reply.header("Retry-After", "1");
+          await reply.code(error.statusCode).send({ error: error.code, message: error.message });
+        } else throw error;
+      } finally {
+        request.raw.off("aborted", abort);
+        reply.raw.off("close", disconnected);
+      }
+    },
+  );
+
+  app.put<{ Params: ProjectParams; Body: RevisionBody & { input: EngineProjectInputV1 } }>(
+    "/organizations/:organizationId/projects/:projectId/schedule",
+    { schema: { params: schemas.projectParams, body: schemas.replaceScheduleBody } },
+    async (request, reply) => {
+      const principal = await mutationPrincipal(
+        db,
+        request,
+        reply,
+        request.params.organizationId,
+        request.params.projectId,
+      );
+      if (!principal) return;
+      try {
+        const revision = await planner.replaceSchedule(
+          tenantContext(request.params.organizationId, principal.userId, request.id),
+          request.params.projectId,
+          request.body.expectedRevision,
+          request.body.input,
+        );
+        await reply.send({ revision });
+      } catch (error) {
+        sendMutationError(reply, error);
+      }
     },
   );
 
   app.post<{ Params: ProjectParams; Body: WbsBody }>(
     "/organizations/:organizationId/projects/:projectId/wbs",
+    { schema: { params: schemas.projectParams, body: schemas.wbsBody } },
     async (request, reply) => {
       const principal = await mutationPrincipal(
         db,
@@ -389,6 +459,7 @@ export function registerProjectRoutes(
 
   app.post<{ Params: ProjectParams; Body: CalendarBody }>(
     "/organizations/:organizationId/projects/:projectId/calendars",
+    { schema: { params: schemas.projectParams, body: schemas.calendarBody } },
     async (request, reply) => {
       const principal = await mutationPrincipal(
         db,
@@ -429,6 +500,7 @@ export function registerProjectRoutes(
 
   app.post<{ Params: ProjectParams; Body: ActivityBody }>(
     "/organizations/:organizationId/projects/:projectId/activities",
+    { schema: { params: schemas.projectParams, body: schemas.activityBody } },
     async (request, reply) => {
       const principal = await mutationPrincipal(
         db,
@@ -467,6 +539,7 @@ export function registerProjectRoutes(
 
   app.post<{ Params: ProjectParams; Body: RelationshipBody }>(
     "/organizations/:organizationId/projects/:projectId/relationships",
+    { schema: { params: schemas.projectParams, body: schemas.relationshipBody } },
     async (request, reply) => {
       const principal = await mutationPrincipal(
         db,
@@ -502,6 +575,12 @@ export function registerProjectRoutes(
 
   app.delete<{ Params: ActivityParams; Body: RevisionBody }>(
     "/organizations/:organizationId/projects/:projectId/activities/:activityId",
+    {
+      schema: {
+        params: schemas.object({ ...schemas.projectParams.properties, activityId: schemas.uuid }),
+        body: schemas.revisionBody,
+      },
+    },
     async (request, reply) => {
       const principal = await mutationPrincipal(
         db,
@@ -530,6 +609,15 @@ export function registerProjectRoutes(
 
   app.delete<{ Params: RelationshipParams; Body: RevisionBody }>(
     "/organizations/:organizationId/projects/:projectId/relationships/:relationshipId",
+    {
+      schema: {
+        params: schemas.object({
+          ...schemas.projectParams.properties,
+          relationshipId: schemas.uuid,
+        }),
+        body: schemas.revisionBody,
+      },
+    },
     async (request, reply) => {
       const principal = await mutationPrincipal(
         db,

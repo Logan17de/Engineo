@@ -2,12 +2,16 @@ import { ENGINE_CONTRACT_VERSION } from "@engineo/contracts";
 import rateLimit from "@fastify/rate-limit";
 import Fastify, { type FastifyError, type FastifyInstance } from "fastify";
 import type { Database } from "./db/client.js";
+import { registerOrganizationRoutes } from "./routes/organizations.js";
+import { registerProjectRoutes } from "./routes/projects.js";
+import { ProcessScheduleRunner, type ScheduleRunner } from "./scheduler/runner.js";
 import { registerAuthRoutes } from "./security/auth-routes.js";
 import { registerSecurityHeaders } from "./security/headers.js";
 import { LoginRateLimiter, loginRateLimitStore } from "./security/rate-limit.js";
 
 export interface BuildAppOptions {
   database?: Database;
+  scheduleRunner?: ScheduleRunner;
 }
 
 export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
@@ -15,6 +19,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     logger: process.env.NODE_ENV !== "test",
     bodyLimit: 1024 * 1024,
     trustProxy: false,
+    ajv: { customOptions: { removeAdditional: false, coerceTypes: false, useDefaults: false } },
   });
 
   registerSecurityHeaders(app);
@@ -54,6 +59,8 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
         }),
       });
       registerAuthRoutes(scope, db, limiter);
+      registerOrganizationRoutes(scope, db);
+      registerProjectRoutes(scope, db, options.scheduleRunner ?? new ProcessScheduleRunner());
     });
   }
 

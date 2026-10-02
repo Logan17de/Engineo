@@ -27,7 +27,7 @@ const organizationPermissions: Record<OrganizationRole, ReadonlySet<Permission>>
     "schedule.run",
     "project.members.manage",
   ]),
-  planner: new Set(["project.read", "project.write", "schedule.run"]),
+  planner: new Set(["project.create", "project.read", "project.write", "schedule.run"]),
   viewer: new Set(["project.read"]),
 };
 
@@ -98,7 +98,6 @@ export async function authorizeProject(
     projectRole: projectRole ?? null,
   };
 }
-
 
 export async function authorizeOrganization(
   db: Database,

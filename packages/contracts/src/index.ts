@@ -1,12 +1,12 @@
+export type { ActivityScheduleResultV1, EngineScheduleResultV1 } from "./result.js";
 export {
-  ENGINE_CONTRACT_VERSION,
-  WEEKDAYS,
   type ActivityConstraintV1,
   type ActivityInputV1,
   type ActivityKindV1,
   type CalendarExceptionV1,
   type CalendarV1,
   type ConstraintTypeV1,
+  ENGINE_CONTRACT_VERSION,
   type EngineProjectInputV1,
   type LagCalendarPolicyV1,
   type ProjectFinishPolicyV1,
@@ -14,6 +14,7 @@ export {
   type RelationshipTypeV1,
   type ScheduleOptionsV1,
   type WbsNodeV1,
+  WEEKDAYS,
   type WeekdayV1,
   type WorkIntervalV1,
 } from "./schedule.js";
@@ -24,8 +25,10 @@ export {
 } from "./serialization.js";
 
 export {
-  validateScheduleInputV1,
+  isIanaTimeZone,
+  isRfc3339Instant,
   type ScheduleValidationCode,
   type ScheduleValidationIssue,
   type ScheduleValidationResult,
+  validateScheduleInputV1,
 } from "./validation.js";

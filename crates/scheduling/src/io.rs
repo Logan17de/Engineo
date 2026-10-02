@@ -4,13 +4,13 @@ use std::fmt::{Display, Formatter};
 
 use engineo_project_model::{
     Activity, ActivityConstraint, ActivityKind, CalendarException, ConstraintType,
-    LagCalendarPolicy, ProjectDefinition, ProjectFinishPolicy, Relationship, RelationshipType,
-    ScheduleInput, ScheduleOptions, WbsNode, Weekday, WorkCalendar, WorkInterval,
-    ENGINE_CONTRACT_VERSION,
+    ENGINE_CONTRACT_VERSION, LagCalendarPolicy, ProjectDefinition, ProjectFinishPolicy,
+    Relationship, RelationshipType, ScheduleInput, ScheduleOptions, WbsNode, Weekday, WorkCalendar,
+    WorkInterval,
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{calculate_cpm, ConstraintViolation, CpmResult, DrivingCause, ScheduleError};
+use crate::{ConstraintViolation, CpmResult, DrivingCause, ScheduleError, calculate_cpm};
 
 #[derive(Debug)]
 pub enum JsonBridgeError {
@@ -194,7 +194,9 @@ pub fn parse_schedule_json(input: &str) -> Result<ScheduleInput, JsonBridgeError
     let dto: ScheduleInputDto = serde_json::from_str(input).map_err(JsonBridgeError::Parse)?;
 
     if dto.schema_version != ENGINE_CONTRACT_VERSION {
-        return Err(JsonBridgeError::UnsupportedSchemaVersion(dto.schema_version));
+        return Err(JsonBridgeError::UnsupportedSchemaVersion(
+            dto.schema_version,
+        ));
     }
 
     Ok(ScheduleInput {
@@ -337,11 +339,7 @@ fn cpm_result_dto(result: &CpmResult) -> CpmResultDto {
                     total_float_minutes: late.total_float_minutes,
                     free_float_minutes: late.free_float_minutes,
                     critical: late.critical,
-                    driving_causes: early
-                        .driving_causes
-                        .iter()
-                        .map(driving_cause_dto)
-                        .collect(),
+                    driving_causes: early.driving_causes.iter().map(driving_cause_dto).collect(),
                 },
             )
         })
@@ -509,8 +507,7 @@ mod tests {
 
     use super::{calculate_schedule_json, parse_schedule_json};
 
-    const FIXTURE: &str =
-        include_str!("../../../fixtures/contracts/v1/minimal-project.json");
+    const FIXTURE: &str = include_str!("../../../fixtures/contracts/v1/minimal-project.json");
 
     #[test]
     fn canonical_contract_fixture_parses() {

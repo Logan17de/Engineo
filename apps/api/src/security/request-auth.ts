@@ -1,7 +1,7 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
 import type { Database } from "../db/client.js";
-import { CSRF_COOKIE, SESSION_COOKIE, parseCookies } from "./cookies.js";
-import { resolveSession, validateCsrf, type SessionPrincipal } from "./session.js";
+import { CSRF_COOKIE, parseCookies, SESSION_COOKIE } from "./cookies.js";
+import { resolveSession, type SessionPrincipal, validateCsrf } from "./session.js";
 
 export async function requireSession(
   db: Database,

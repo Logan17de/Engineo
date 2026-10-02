@@ -1,7 +1,31 @@
-import { randomUUID } from "node:crypto";
-import type { CalendarV1, ActivityConstraintV1, ActivityKindV1, RelationshipTypeV1 } from "@engineo/contracts";
-import type { Database } from "../db/client.js";
+import { createHash, randomUUID } from "node:crypto";
+import {
+  type ActivityConstraintV1,
+  type ActivityKindV1,
+  type CalendarV1,
+  type EngineProjectInputV1,
+  type RelationshipTypeV1,
+  type ScheduleValidationIssue,
+  validateScheduleInputV1,
+} from "@engineo/contracts";
+import type { Database, DatabaseExecutor } from "../db/client.js";
 import type { TenantContext } from "../db/tenant-context.js";
+import { appendAuditEvent } from "../security/audit.js";
+import { readPlannerSnapshot } from "./project-repository.js";
+
+export class PlannerInputError extends Error {
+  constructor(public readonly issues: ScheduleValidationIssue[]) {
+    super("Invalid schedule input");
+  }
+}
+export class PlannerNotFoundError extends Error {}
+function assertValid(input: EngineProjectInputV1): void {
+  const result = validateScheduleInputV1(input);
+  if (!result.valid) throw new PlannerInputError(result.issues);
+}
+function inputHash(input: EngineProjectInputV1): string {
+  return createHash("sha256").update(JSON.stringify(input)).digest("hex");
+}
 
 export class RevisionConflictError extends Error {
   constructor() {
@@ -67,10 +91,7 @@ export interface CreateRelationshipInput {
 export class PlannerRepository {
   constructor(private readonly db: Database) {}
 
-  async listAccessibleProjects(
-    userId: string,
-    organizationId: string,
-  ): Promise<ProjectSummary[]> {
+  async listAccessibleProjects(userId: string, organizationId: string): Promise<ProjectSummary[]> {
     const rows = await this.db`
       SELECT p.id, p.name, p.code, p.description, p.revision, p.updated_at
       FROM projects p
@@ -101,10 +122,7 @@ export class PlannerRepository {
     }));
   }
 
-  async createProject(
-    context: TenantContext,
-    input: CreateProjectInput,
-  ): Promise<CreatedProject> {
+  async createProject(context: TenantContext, input: CreateProjectInput): Promise<CreatedProject> {
     const projectId = randomUUID();
     const calendarId = randomUUID();
     const rootWbsId = randomUUID();
@@ -127,7 +145,7 @@ export class PlannerRepository {
         )
         VALUES (
           ${calendarId}, ${context.organizationId}, ${projectId},
-          'Standard 5x8', ${input.timeZone}, ${sql.json(definition)}
+          'Standard 5x8', ${input.timeZone}, ${JSON.stringify(definition)}::text::jsonb
         )
       `;
 
@@ -164,6 +182,17 @@ export class PlannerRepository {
           ON CONFLICT DO NOTHING
         `;
       }
+      await appendAuditEvent(sql, {
+        organizationId: context.organizationId,
+        actorType: "user",
+        actorId: context.actorId,
+        action: "project.create",
+        resourceType: "project",
+        resourceId: projectId,
+        source: "api",
+        correlationId: context.correlationId,
+        payload: { revision: 1 },
+      });
     });
 
     return {
@@ -219,7 +248,7 @@ export class PlannerRepository {
           VALUES (
             ${id}, ${context.organizationId}, ${projectId},
             ${input.name}, ${input.timeZone},
-            ${sql.json({ week: input.week, exceptions: input.exceptions })}
+            ${JSON.stringify({ week: input.week, exceptions: input.exceptions })}::text::jsonb
           )
         `;
       },
@@ -247,7 +276,7 @@ export class PlannerRepository {
           VALUES (
             ${id}, ${context.organizationId}, ${projectId},
             ${input.wbsId}, ${input.calendarId}, ${input.name},
-            ${input.kind}, ${input.durationMinutes}, ${sql.json(input.constraints)},
+            ${input.kind}, ${input.durationMinutes}, ${JSON.stringify(input.constraints)}::text::jsonb,
             ${input.sortOrder}
           )
         `;
@@ -290,23 +319,18 @@ export class PlannerRepository {
     activityId: string,
     expectedRevision: number,
   ): Promise<number> {
-    return await this.bumpRevisionAndMutate(
-      context,
-      projectId,
-      expectedRevision,
-      async (sql) => {
-        const rows = await sql`
+    return await this.bumpRevisionAndMutate(context, projectId, expectedRevision, async (sql) => {
+      const rows = await sql`
           DELETE FROM activities
           WHERE organization_id = ${context.organizationId}
             AND project_id = ${projectId}
             AND id = ${activityId}
           RETURNING id
         `;
-        if (rows.length !== 1) {
-          throw new Error("Activity not found.");
-        }
-      },
-    );
+      if (rows.length !== 1) {
+        throw new PlannerNotFoundError("Activity not found.");
+      }
+    });
   }
 
   async deleteRelationship(
@@ -315,30 +339,87 @@ export class PlannerRepository {
     relationshipId: string,
     expectedRevision: number,
   ): Promise<number> {
-    return await this.bumpRevisionAndMutate(
-      context,
-      projectId,
-      expectedRevision,
-      async (sql) => {
-        const rows = await sql`
+    return await this.bumpRevisionAndMutate(context, projectId, expectedRevision, async (sql) => {
+      const rows = await sql`
           DELETE FROM relationships
           WHERE organization_id = ${context.organizationId}
             AND project_id = ${projectId}
             AND id = ${relationshipId}
           RETURNING id
         `;
-        if (rows.length !== 1) {
-          throw new Error("Relationship not found.");
-        }
-      },
-    );
+      if (rows.length !== 1) {
+        throw new PlannerNotFoundError("Relationship not found.");
+      }
+    });
+  }
+
+  async replaceSchedule(
+    context: TenantContext,
+    projectId: string,
+    expectedRevision: number,
+    input: EngineProjectInputV1,
+  ): Promise<number> {
+    if (input.project.id !== projectId)
+      throw new PlannerInputError([
+        {
+          code: "INVALID_ID",
+          path: "project.id",
+          message: "Schedule project must match the requested project.",
+        },
+      ]);
+    assertValid(input);
+    return await this.bumpRevisionAndMutate(context, projectId, expectedRevision, async (sql) => {
+      // The project revision lock serializes writers. Delete/reinsert is contained
+      // in one transaction; a failure retains the complete previous schedule.
+      await sql`DELETE FROM project_schedule_settings WHERE organization_id = ${context.organizationId} AND project_id = ${projectId}`;
+      await sql`DELETE FROM relationships WHERE organization_id = ${context.organizationId} AND project_id = ${projectId}`;
+      await sql`DELETE FROM activities WHERE organization_id = ${context.organizationId} AND project_id = ${projectId}`;
+      await sql`DELETE FROM wbs_nodes WHERE organization_id = ${context.organizationId} AND project_id = ${projectId}`;
+      await sql`DELETE FROM calendars WHERE organization_id = ${context.organizationId} AND project_id = ${projectId}`;
+      await sql`UPDATE projects SET name = ${input.project.name} WHERE organization_id = ${context.organizationId} AND id = ${projectId}`;
+      await sql`
+        INSERT INTO calendars (id, organization_id, project_id, name, time_zone, definition)
+        SELECT id, ${context.organizationId}, ${projectId}, name, "timeZone",
+          jsonb_build_object('week', week, 'exceptions', exceptions)
+        FROM jsonb_to_recordset(${JSON.stringify(input.calendars)}::text::jsonb)
+          AS c(id uuid, name text, "timeZone" text, week jsonb, exceptions jsonb)
+      `;
+      await sql`
+        INSERT INTO wbs_nodes (id, organization_id, project_id, parent_id, code, name, sort_order)
+        SELECT id, ${context.organizationId}, ${projectId}, "parentId", code, name, "sortOrder"
+        FROM jsonb_to_recordset(${JSON.stringify(input.wbs)}::text::jsonb)
+          AS w(id uuid, "parentId" uuid, code text, name text, "sortOrder" bigint)
+      `;
+      if (input.activities.length)
+        await sql`
+        INSERT INTO activities (id, organization_id, project_id, wbs_id, calendar_id, name, kind, duration_minutes, constraints, sort_order)
+        SELECT id, ${context.organizationId}, ${projectId}, "wbsId", "calendarId", name, kind, "durationMinutes", constraints, ordinality - 1
+        FROM ROWS FROM(jsonb_to_recordset(${JSON.stringify(input.activities)}::text::jsonb)
+          AS (id uuid, "wbsId" uuid, "calendarId" uuid, name text, kind text, "durationMinutes" bigint, constraints jsonb))
+          WITH ORDINALITY AS a(id, "wbsId", "calendarId", name, kind, "durationMinutes", constraints, ordinality)
+      `;
+      if (input.relationships.length)
+        await sql`
+        INSERT INTO relationships (id, organization_id, project_id, predecessor_id, successor_id, relationship_type, lag_minutes)
+        SELECT gen_random_uuid(), ${context.organizationId}, ${projectId}, "predecessorId", "successorId", type, "lagMinutes"
+        FROM jsonb_to_recordset(${JSON.stringify(input.relationships)}::text::jsonb)
+          AS r("predecessorId" uuid, "successorId" uuid, type text, "lagMinutes" bigint)
+      `;
+      await sql`
+        INSERT INTO project_schedule_settings (organization_id, project_id, planned_start, data_date, required_finish,
+          default_calendar_id, critical_float_threshold_minutes, lag_calendar_policy, project_finish_policy)
+        VALUES (${context.organizationId}, ${projectId}, ${input.project.plannedStart}, ${input.project.dataDate},
+          ${input.project.requiredFinish}, ${input.project.defaultCalendarId},
+          ${input.scheduleOptions.criticalFloatThresholdMinutes}, ${input.scheduleOptions.lagCalendarPolicy}, ${input.scheduleOptions.projectFinishPolicy})
+      `;
+    });
   }
 
   private async bumpRevisionAndMutate(
     context: TenantContext,
     projectId: string,
     expectedRevision: number,
-    mutate: (sql: Database) => Promise<void>,
+    mutate: (sql: DatabaseExecutor) => Promise<void>,
   ): Promise<number> {
     return await this.db.begin(async (sql) => {
       const revisions = await sql`
@@ -355,7 +436,29 @@ export class PlannerRepository {
         throw new RevisionConflictError();
       }
 
-      await mutate(sql as Database);
+      const before = await readPlannerSnapshot(sql, context, projectId);
+      await mutate(sql);
+      const after = await readPlannerSnapshot(sql, context, projectId);
+      if (!before || !after) throw new PlannerNotFoundError("Project not found");
+      assertValid(after.input);
+      await appendAuditEvent(sql, {
+        organizationId: context.organizationId,
+        actorType: "user",
+        actorId: context.actorId,
+        action: "project.schedule.edit",
+        resourceType: "project",
+        resourceId: projectId,
+        source: "api",
+        correlationId: context.correlationId,
+        payload: {
+          revision: Number(row.revision),
+          previousRevision: expectedRevision,
+          beforeHash: inputHash(before.input),
+          afterHash: inputHash(after.input),
+          before: JSON.parse(JSON.stringify(before.input)),
+          after: JSON.parse(JSON.stringify(after.input)),
+        },
+      });
       return Number(row.revision);
     });
   }

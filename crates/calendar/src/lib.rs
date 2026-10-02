@@ -6,6 +6,14 @@ mod error;
 pub use compiled::CompiledCalendar;
 pub use error::CalendarError;
 
+/// Versioned with the engine's pinned chrono-tz data, for boundary validation.
+pub fn supported_time_zones() -> impl Iterator<Item = &'static str> {
+    chrono_tz::TZ_VARIANTS
+        .iter()
+        .copied()
+        .map(chrono_tz::Tz::name)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct WorkMinutes(u32);
 
