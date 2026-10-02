@@ -1,9 +1,3 @@
-CREATE TABLE engineo_schema_migrations (
-  name text PRIMARY KEY,
-  checksum_sha256 text NOT NULL,
-  applied_at timestamptz NOT NULL DEFAULT now()
-);
-
 CREATE TABLE organizations (
   id uuid PRIMARY KEY,
   slug text NOT NULL,
