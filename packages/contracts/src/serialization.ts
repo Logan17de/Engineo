@@ -15,12 +15,14 @@ export function canonicalizeScheduleInputV1(input: EngineProjectInputV1): Engine
   const calendars = [...input.calendars]
     .sort((a, b) => compareText(a.id, b.id))
     .map((calendar) => {
-      const weekEntries = WEEKDAYS.map((day: WeekdayV1) => [
-        day,
-        [...calendar.week[day]].sort((a, b) => compareText(a.start, b.start)),
-      ] as const);
+      const weekEntries = WEEKDAYS.map(
+        (day: WeekdayV1) =>
+          [day, [...calendar.week[day]].sort((a, b) => compareText(a.start, b.start))] as const,
+      );
 
-      const week = Object.fromEntries(weekEntries) as EngineProjectInputV1["calendars"][number]["week"];
+      const week = Object.fromEntries(
+        weekEntries,
+      ) as EngineProjectInputV1["calendars"][number]["week"];
 
       return {
         id: calendar.id,
