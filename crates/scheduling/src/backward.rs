@@ -3,11 +3,11 @@ use std::collections::BTreeMap;
 use chrono::{DateTime, Utc};
 use engineo_calendar::{CompiledCalendar, WorkMinutes};
 use engineo_project_model::{
-    Activity, ActivityId, CalendarId, ProjectFinishPolicy, Relationship, RelationshipType,
-    ScheduleInput,
+    Activity, ActivityId, CalendarId, ConstraintType, ProjectFinishPolicy, Relationship,
+    RelationshipType, ScheduleInput,
 };
 
-use crate::forward::{compile_calendars, lag_calendar, shift_by_lag};
+use crate::forward::{compile_calendars, lag_calendar, parse_constraint_instant, shift_by_lag};
 use crate::{EarlyDates, ForwardPassResult, ScheduleError, ScheduleGraph, forward_pass};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -21,10 +21,19 @@ pub struct LateDates {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConstraintViolation {
+    pub activity_id: ActivityId,
+    pub constraint_type: ConstraintType,
+    pub constraint_instant: DateTime<Utc>,
+    pub actual_instant: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CpmResult {
     pub early: ForwardPassResult,
     pub late: BTreeMap<ActivityId, LateDates>,
     pub late_project_finish: DateTime<Utc>,
+    pub constraint_violations: Vec<ConstraintViolation>,
 }
 
 impl CpmResult {
@@ -119,6 +128,8 @@ pub fn backward_pass(
             }
         }
 
+        apply_upper_constraints(activity, activity_calendar, &mut late_start)?;
+
         let late_finish = activity_calendar
             .add_work_duration(late_start, WorkMinutes::new(activity.duration_minutes))?;
         let early_dates = early
@@ -153,11 +164,91 @@ pub fn backward_pass(
         );
     }
 
+    let constraint_violations = constraint_violations(input, &early)?;
+
     Ok(CpmResult {
         early,
         late,
         late_project_finish,
+        constraint_violations,
     })
+}
+
+fn apply_upper_constraints(
+    activity: &Activity,
+    calendar: &CompiledCalendar,
+    late_start: &mut DateTime<Utc>,
+) -> Result<(), ScheduleError> {
+    for constraint in &activity.constraints {
+        let instant = parse_constraint_instant(activity, constraint)?;
+
+        let candidate = match constraint.constraint_type {
+            ConstraintType::StartOnOrBefore => Some(previous_start_instant(calendar, instant)?),
+            ConstraintType::FinishOnOrBefore => Some(terminal_late_start(
+                calendar,
+                instant,
+                activity.duration_minutes,
+            )?),
+            ConstraintType::StartOnOrAfter | ConstraintType::FinishOnOrAfter => None,
+        };
+
+        if let Some(candidate) = candidate {
+            *late_start = (*late_start).min(candidate);
+        }
+    }
+
+    Ok(())
+}
+
+fn constraint_violations(
+    input: &ScheduleInput,
+    early: &ForwardPassResult,
+) -> Result<Vec<ConstraintViolation>, ScheduleError> {
+    let mut violations = Vec::new();
+
+    for activity in &input.activities {
+        let dates = early
+            .activity(&activity.id)
+            .ok_or_else(|| ScheduleError::MissingActivity(activity.id.clone()))?;
+
+        for constraint in &activity.constraints {
+            let constraint_instant = parse_constraint_instant(activity, constraint)?;
+            let (actual_instant, satisfied) = match constraint.constraint_type {
+                ConstraintType::StartOnOrAfter => {
+                    (dates.early_start, dates.early_start >= constraint_instant)
+                }
+                ConstraintType::StartOnOrBefore => {
+                    (dates.early_start, dates.early_start <= constraint_instant)
+                }
+                ConstraintType::FinishOnOrAfter => {
+                    (dates.early_finish, dates.early_finish >= constraint_instant)
+                }
+                ConstraintType::FinishOnOrBefore => {
+                    (dates.early_finish, dates.early_finish <= constraint_instant)
+                }
+            };
+
+            if !satisfied {
+                violations.push(ConstraintViolation {
+                    activity_id: activity.id.clone(),
+                    constraint_type: constraint.constraint_type,
+                    constraint_instant,
+                    actual_instant,
+                });
+            }
+        }
+    }
+
+    violations.sort_by(|left, right| {
+        left.activity_id
+            .cmp(&right.activity_id)
+            .then_with(|| {
+                constraint_rank(left.constraint_type).cmp(&constraint_rank(right.constraint_type))
+            })
+            .then_with(|| left.constraint_instant.cmp(&right.constraint_instant))
+    });
+
+    Ok(violations)
 }
 
 fn terminal_late_start(
@@ -287,4 +378,13 @@ fn outgoing_relationships(relationships: &[Relationship]) -> BTreeMap<&str, Vec<
     }
 
     outgoing
+}
+
+const fn constraint_rank(constraint_type: ConstraintType) -> u8 {
+    match constraint_type {
+        ConstraintType::StartOnOrAfter => 0,
+        ConstraintType::FinishOnOrAfter => 1,
+        ConstraintType::StartOnOrBefore => 2,
+        ConstraintType::FinishOnOrBefore => 3,
+    }
 }
