@@ -1,6 +1,7 @@
 use engineo_project_model::{
-    Activity, ActivityKind, LagCalendarPolicy, ProjectDefinition, ProjectFinishPolicy, Relationship,
-    RelationshipType, ScheduleInput, ScheduleOptions, WbsNode, Weekday, WorkCalendar, WorkInterval,
+    Activity, ActivityKind, LagCalendarPolicy, ProjectDefinition, ProjectFinishPolicy,
+    Relationship, RelationshipType, ScheduleInput, ScheduleOptions, WbsNode, Weekday, WorkCalendar,
+    WorkInterval,
 };
 
 #[derive(Debug, Clone, Copy)]
