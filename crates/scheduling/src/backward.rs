@@ -96,11 +96,9 @@ pub fn backward_pass(
                     .ok_or_else(|| {
                         ScheduleError::MissingActivity(relationship.successor_id.clone())
                     })?;
-                let successor_dates = late
-                    .get(&relationship.successor_id)
-                    .ok_or_else(|| {
-                        ScheduleError::MissingSuccessorDates(relationship.successor_id.clone())
-                    })?;
+                let successor_dates = late.get(&relationship.successor_id).ok_or_else(|| {
+                    ScheduleError::MissingSuccessorDates(relationship.successor_id.clone())
+                })?;
                 let lag_calendar = lag_calendar(
                     input.schedule_options.lag_calendar_policy,
                     activity,
@@ -121,10 +119,8 @@ pub fn backward_pass(
             }
         }
 
-        let late_finish = activity_calendar.add_work_duration(
-            late_start,
-            WorkMinutes::new(activity.duration_minutes),
-        )?;
+        let late_finish = activity_calendar
+            .add_work_duration(late_start, WorkMinutes::new(activity.duration_minutes))?;
         let early_dates = early
             .activity(activity_id)
             .ok_or_else(|| ScheduleError::MissingActivity(activity_id.to_owned()))?;
@@ -174,10 +170,7 @@ fn terminal_late_start(
     }
 
     let late_finish = calendar.previous_work_instant(project_finish)?;
-    Ok(calendar.subtract_work_duration(
-        late_finish,
-        WorkMinutes::new(duration_minutes),
-    )?)
+    Ok(calendar.subtract_work_duration(late_finish, WorkMinutes::new(duration_minutes))?)
 }
 
 fn predecessor_start_upper_bound(
@@ -202,10 +195,8 @@ fn predecessor_start_upper_bound(
             }
 
             let finish = predecessor_calendar.previous_work_instant(predecessor_event_bound)?;
-            Ok(predecessor_calendar.subtract_work_duration(
-                finish,
-                WorkMinutes::new(predecessor.duration_minutes),
-            )?)
+            Ok(predecessor_calendar
+                .subtract_work_duration(finish, WorkMinutes::new(predecessor.duration_minutes))?)
         }
         RelationshipType::StartToStart | RelationshipType::StartToFinish => {
             Ok(predecessor_calendar.previous_work_instant(predecessor_event_bound)?)
