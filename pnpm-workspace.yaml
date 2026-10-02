@@ -5,3 +5,6 @@ packages:
 minimumReleaseAge: 1440
 blockExoticSubdeps: true
 autoDedupe: true
+
+allowBuilds:
+  esbuild: true
