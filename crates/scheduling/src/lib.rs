@@ -1,5 +1,9 @@
 #![forbid(unsafe_code)]
 
+mod graph;
+
+pub use graph::{GraphError, OpenEnds, ScheduleGraph};
+
 use engineo_calendar::WorkMinutes;
 use engineo_project_model::ENGINE_CONTRACT_VERSION;
 
