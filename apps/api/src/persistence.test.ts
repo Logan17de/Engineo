@@ -205,10 +205,7 @@ test("audit events are append-only", {
       db`UPDATE audit_events SET action = 'tampered' WHERE id = ${event}`,
       /append-only/,
     );
-    await assert.rejects(
-      db`DELETE FROM audit_events WHERE id = ${event}`,
-      /append-only/,
-    );
+    await assert.rejects(db`DELETE FROM audit_events WHERE id = ${event}`, /append-only/);
   } finally {
     await db.end({ timeout: 5 });
   }
