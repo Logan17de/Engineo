@@ -52,10 +52,7 @@ function serializeCookie(
   return attributes.join("; ");
 }
 
-export function issuedSessionCookies(
-  session: IssuedSession,
-  options: CookieOptions,
-): string[] {
+export function issuedSessionCookies(session: IssuedSession, options: CookieOptions): string[] {
   return [
     serializeCookie(SESSION_COOKIE, session.token, {
       ...options,
