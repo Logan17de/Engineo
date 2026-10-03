@@ -561,7 +561,10 @@ test("built application CLI preserves strict HTTPS transport and session isolati
       "NODE_TLS_REJECT_UNAUTHORIZED=0 is refused before DNS/TCP or credential transmission",
       async () => {
         const beforeRequests = requests.length,
-          beforeConnections = connections;
+          beforeConnections = connections,
+          parentTlsEnvironment = process.env.NODE_TLS_REJECT_UNAUTHORIZED;
+        // The unsafe setting belongs only to this disposable child. Never relax
+        // certificate validation in the long-lived unit/TLS test host.
         const result = await run(
           "read",
           origin,
@@ -580,6 +583,7 @@ test("built application CLI preserves strict HTTPS transport and session isolati
         );
         assert.equal(requests.length, beforeRequests);
         assert.equal(connections, beforeConnections);
+        assert.equal(process.env.NODE_TLS_REJECT_UNAUTHORIZED, parentTlsEnvironment);
       },
     );
 

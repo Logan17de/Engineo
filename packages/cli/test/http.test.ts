@@ -22,6 +22,7 @@ import {
 import type { Database } from "../../../apps/api/src/db/client.js";
 import type { IssuedSession } from "../../../apps/api/src/security/session.js";
 import type { CliOutputV1 } from "../src/run.js";
+import { strictConfigurationFailures } from "./configuration-failures.js";
 
 // Explicit opt-in: this suite creates and drops ONLY its own uniquely named database.
 // Build contracts, CLI, API and the real Rust executable first. Start PostgreSQL
@@ -585,6 +586,65 @@ test("built private CLI uses the real HTTP API, disposable PostgreSQL and Rust",
           assert.equal(response.output.command, mode === "plan" ? "plan" : "validate");
           assert.equal(response.stderr, "");
           assertPrivate(JSON.stringify(response.output));
+          assert.deepEqual(
+            calls.slice(before),
+            mode === "offline validate" ? [] : [{ method: "GET", path: "/auth/me" }],
+          );
+          await assert.rejects(access(out));
+          assert.equal((await current(malformedState)).revision, malformedState.snapshot.revision);
+        });
+      }
+    }
+
+    secrets.push(...strictConfigurationFailures.map((specimen) => specimen.credential));
+    for (const specimen of strictConfigurationFailures) {
+      for (const mode of ["offline validate", "authoritative validate", "plan"] as const) {
+        await t.test(`strict ${specimen.label} is private during ${mode}`, async () => {
+          assert.doesNotThrow(() => JSON.parse(specimen.source));
+          const file = join(directory, `${randomUUID()}.strict-invalid.json`),
+            out = join(directory, `${randomUUID()}.strict-invalid-review.json`);
+          await writeFile(file, specimen.source, { mode: 0o600 });
+          const before = calls.length;
+          const response =
+            mode === "offline validate"
+              ? await launch(["validate", "--file", file, "--offline"]).done
+              : mode === "authoritative validate"
+                ? await run("validate", malformedState, ["--file", file, "--authoritative"])
+                : await run("plan", malformedState, [
+                    "--file",
+                    file,
+                    "--plan-id",
+                    randomUUID(),
+                    "--expected-revision",
+                    String(malformedState.snapshot.revision),
+                    "--out",
+                    out,
+                  ]);
+          failure(response, "validation", "configuration_invalid");
+          assert.equal(response.output.command, mode === "plan" ? "plan" : "validate");
+          assert.equal(response.stderr, "");
+          assertPrivate(response.stdout);
+          const details = response.output.error?.details as {
+            valid: boolean;
+            calculationChecked: boolean;
+            diagnostics: {
+              totalCount: number;
+              truncated: boolean;
+              issues: { code: string; path: string; message: string }[];
+            };
+          };
+          assert.equal(details.valid, false);
+          assert.equal(details.calculationChecked, false);
+          assert.equal(details.diagnostics.totalCount, 1);
+          assert.equal(details.diagnostics.truncated, false);
+          assert.equal(details.diagnostics.issues.length, 1);
+          assert.equal(details.diagnostics.issues[0]?.code, specimen.issueCode);
+          assert.equal(details.diagnostics.issues[0]?.path, "");
+          if (specimen.issueCode === "INVALID_JSON")
+            assert.match(
+              details.diagnostics.issues[0]?.message ?? "",
+              /^Malformed JSON at character \d+\.$/,
+            );
           assert.deepEqual(
             calls.slice(before),
             mode === "offline validate" ? [] : [{ method: "GET", path: "/auth/me" }],

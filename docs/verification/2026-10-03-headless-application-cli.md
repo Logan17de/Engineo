@@ -1,5 +1,139 @@
 # Private application CLI verification — 2026-10-03
 
+## PR #65 diagnostic and TLS-test remediation
+
+This focused local correction starts at published head
+`8a6df65f217504163ce5d67cd1ee2ecfb90caeb7`, tree
+`579c701baca2502b4f604eadbd14e9d3896ef1ba`. It changes only CLI source/tests
+and this verification record. The sections below describe earlier historical
+increments; their counts are not the counts for this corrected head.
+
+Configuration credential screening now consumes the shared duplicate-aware strict
+parser's decoded value, never native JSON's last-key-wins view. Every strict
+parse-failure path is reduced to the root, including underflow, excessive depth
+and duplicate decoded keys in otherwise native-parseable JSON. Safe contract
+issue codes, counts and character offsets remain useful. Schema diagnostics
+retain field paths only after successful strict parsing and decoded credential
+screening. This does not claim arbitrary secret detection or relax any shared
+schema, duplicate, transport, depth or numeric rule.
+
+The long-lived unit-test host no longer assigns
+`process.env.NODE_TLS_REJECT_UNAUTHORIZED`. The negative unsafe-environment
+scenario remains in the existing built-CLI TLS subprocess harness, with its
+calibrated no-dial observer proving refusal before DNS/TCP. That harness also
+asserts the parent's TLS environment stays unchanged. No query suppression,
+waiver, trust-store change or production transport exception was introduced.
+
+Final local checks of the corrected CLI passed:
+
+- Real frozen pnpm 12.8.0 install: 91 packages reused, zero packages downloaded;
+  unchanged release-age/build/supply-chain policies and ordinary local install
+- Root formatting, lint, all workspace/e2e TypeScript checks and complete
+  production contracts/CLI/API/web build: exit 0; five existing lint warnings
+  and the existing Biome configuration-deprecation information item remain
+- Complete CLI unit suite: **107/107**, zero failed, cancelled or skipped;
+  the previous 80 tests minus the unsafe global-TLS unit test plus 27 strict
+  failure regressions and one safe schema-path regression
+- Real built TCP/API/PostgreSQL/Rust acceptance: **59/59**, zero failed,
+  cancelled or skipped, **15517.767961 ms**; 58 subtests and their parent
+- Real built TLS acceptance: **15/15**, zero failed, cancelled or skipped,
+  **1609.01947 ms**; 14 subtests and their parent, including child-only unsafe
+  TLS environment refusal, certificate-chain/hostname and redirect isolation
+
+The original 18 malformed unit regressions and 18 malformed TCP regressions
+remain. Nine additional native-parseable specimens run through offline validate,
+authoritative validate and plan in both suites (27 additional cases per suite).
+They cover the exact duplicate-shadowed escaped-tab Bearer underflow, plain and
+Unicode/escaped whitespace variants, duplicate-shadowed excessive depth,
+duplicate decoded keys, and an opaque key that no credential-shape heuristic
+recognizes. All actual command runs require one safe versioned exit-3
+`configuration_invalid` envelope, empty stderr, no credential-bearing paths,
+no project POST or saved review, and unchanged revision. Safe strict issue
+codes and numeric character offsets are asserted rather than discarded.
+
+The fresh TCP run used its own uniquely named `TEMPLATE template0` fixture
+database. The source database was not migrated or changed, the harness dropped
+its fixture, and the coordinated wrapper stopped PostgreSQL afterward.
+Sorted CLI/contracts/API source and runtime SHA-256 manifests, including the
+existing real Rust executable, matched before and after that run.
+
+This correction did not execute the API unit suite, Rust tests/Clippy, browser
+acceptance, dependency audit or CodeQL. Those checks belong to the integration
+owner's exact combined-head review. Local Chromium remained denied and was not
+retried. No publication, merge, settings change, deployment, real identity or
+credential was used. Removing the flagged source is not a claim that a new
+CodeQL analysis has already passed.
+
+### Final combined local validation
+
+The final combined repair was validated from base
+`8a6df65f217504163ce5d67cd1ee2ecfb90caeb7` with the eleven corrective paths
+staged as tree `2348b9e7c9daffc7c7b388b7e271c9cfdccfff91`. It includes the
+independently reviewed CLI correction, SARIF rule-resolution repair and bounded
+CLI-envelope/E2E wrapper correction. The separate configuration-hardening
+migration `0006` is not included. Only this results subsection was appended after
+validation; every implementation byte remained unchanged.
+
+A fresh, uniquely named `TEMPLATE template0` database was used for `pnpm check`.
+The final combined local results were:
+
+- Full `pnpm check`: **exit 0**, including all package/e2e types, production
+  contracts/CLI/API/web builds, formatting, Rust formatting and all-targets
+  Clippy with `-D warnings`
+- Contracts **41/41**, CLI **107/107**, genuine PostgreSQL/Rust API **184/184**
+  and aggregate script security **127/127**; zero failed, cancelled or skipped
+- Rust **51 passed**, zero failed; one documented manual performance benchmark
+  ignored, not represented as an executed pass
+- Complete built HTTP **59/59**, zero failed/cancelled/skipped,
+  **17429.070457 ms**
+- Complete built TLS **15/15**, zero failed/cancelled/skipped,
+  **1562.76619 ms**; private ephemeral fixture removal verified
+- Separate e2e typecheck passed; supported browser-wrapper collection discovered
+  **48 tests in 6 files**, without executing Chromium or browser scenarios
+- Corrected SARIF gate against the original PR #65 report: expected **exit 1**,
+  retaining `js/disabling-certificate-validation`, severity **7.5**, effective
+  level **error**, at the original `cli.test.ts:577`; no suppression or waiver
+- Corrected gate against the retained green actual-main JavaScript and Rust
+  reports: **exit 0** and zero high/error findings for both. These are gate
+  compatibility checks, not fresh corrected-head CodeQL analyses
+
+Lint passed with the same five preexisting non-null-assertion warnings and one
+Biome configuration-deprecation information item. The aggregate script run also
+retained Node's existing module-type warning for the web helper. A separate
+source-extracted E2E helper proof supplied by the integration owner passed
+**36 checks** on **four retained real review artifacts**; it is not browser
+runtime acceptance.
+
+Before/after all eleven corrective source hashes, all **114 protected production
+API/contracts/Rust/web and root configuration files**, the combined CLI/script/E2E
+source manifest and the real release Rust executable were identical. The build
+regenerated `apps/web/next-env.d.ts`; its exact expected diff was captured and
+its baseline bytes restored before source comparison. The production build also
+replaced the stale earlier `dist/run.js` with the corrected output:
+
+- Corrected `src/run.ts` SHA-256:
+  `70e1b07e5e51ac8463d732fee40617ecf389772cd0399dbd4e988816f0bb689d`
+- Corrected `dist/run.js` SHA-256:
+  `61dea8b1cb9288b0ebdeb479d1feb1e91fb3e54fcfecda106ea9215da13e986b`
+
+All **49 rebuilt CLI/contracts/API runtime files** then remained byte-identical
+through the complete HTTP/TLS/collection/gate execution. The old pre-build output
+manifest is retained separately and is not used as the successful runtime pairing.
+The full-check database and independently generated HTTP/browser-wrapper fixture
+databases were removed; the existing `engineo` database and old migration ledger
+were never migrated or reset. PostgreSQL was stopped and ownership released.
+
+The original-head CI/browser failures remain failed historical evidence. No
+local browser execution was attempted after the denial, no fresh corrected-head
+CodeQL analysis or dependency audit was run here, and no corrected committed-head
+CI result is claimed. The earlier dependency audit belongs to its earlier source
+head. All 48 actual browser cases and retained GUI evidence review, fresh
+exact-corrected-head CI/CodeQL/dependency gates and publication approval remain.
+No publication, merge, credentials, deployment, settings or license change was
+performed. The final evidence index is one-way: it excludes itself, the manifest
+that refers to it and mutable summaries; old circular checksum-ledger snapshots
+are retained as historical exceptions rather than reused as integrity roots.
+
 ## Scope and baseline
 
 The private `@engineo/cli` increment was authored from reviewed main commit

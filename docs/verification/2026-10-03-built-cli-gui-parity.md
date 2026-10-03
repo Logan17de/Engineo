@@ -160,3 +160,22 @@ execution and publication remain with the integration owner and their permission
 gate; no denied source upload or browser execution was retried or bypassed.
 Static success does not establish
 runtime success, deployment readiness, or permission to publish/trigger CI.
+
+## First exact-head runtime and wrapper correction
+
+PR65 head `8a6df65f217504163ce5d67cd1ee2ecfb90caeb7`, CI `37120423606`,
+passed the 44 prior browser cases but failed all four new scenarios at the shared
+plan helper. The helper incorrectly passed the CLI-owned `recovered: false`
+field to the unchanged strict API plan-wrapper validator.
+
+The correction asserts that `recovered` is an own field and exactly `false` for
+these normal primary-response commands, then validates the remaining API payload
+without stripping any other property. Initial plan and exact plan replay use the
+same boundary. API schema validation and all identity/digest/revision/native
+state assertions remain unchanged.
+
+The exact helper source was transpiled for a local proof using all four retained
+actual failed-run review artifacts. All 36 checks passed: correct CLI/API shape,
+missing/wrong recovery flags, extra API fields and extra nested plan fields.
+E2E TypeScript and Biome checks passed. This proof executes no browser; all 48
+runtime cases require a fresh corrected-head CI run before acceptance.

@@ -2,8 +2,8 @@ import {
   ProjectConfigurationError,
   type ProjectConfigurationPlanV1,
   type ProjectConfigurationReadV1,
+  parseConfigurationJsonV1,
   parseProjectConfigurationReviewJsonV1,
-  parseProjectConfigurationV1,
   serializeScheduleInputV1,
   validateProjectConfigurationV1,
 } from "@engineo/contracts";
@@ -38,35 +38,38 @@ function success(command: string, data: unknown): CliOutputV1 {
 
 function checkedConfiguration(source: string, secrets: readonly string[] = []) {
   let value: unknown;
-  let parsed = false;
   try {
-    value = JSON.parse(source);
-    parsed = true;
-  } catch {
-    // The strict shared parser still owns malformed/duplicate/version rejection.
-    value = null;
-  }
-  rejectCredentials(value, secrets);
-  const checked = parseProjectConfigurationV1(source);
-  if (!checked.valid) {
-    const details = parsed
-      ? checked
-      : {
-          ...checked,
-          diagnostics: {
-            ...checked.diagnostics,
-            // Malformed input has not been credential-screened as decoded JSON.
-            // Paths can contain quoted/escaped literal keys. Keep safe issue codes,
-            // counts and character offsets, but never echo those untrusted keys.
-            issues: checked.diagnostics.issues.map((issue) => ({ ...issue, path: "" })),
-          },
-        };
-    rejectCredentials(details, secrets);
+    // Screen only the same duplicate-aware, bounded decoded value that is
+    // validated. Native JSON.parse can hide earlier credential-bearing subtrees.
+    value = parseConfigurationJsonV1(source);
+  } catch (error) {
+    if (!(error instanceof ProjectConfigurationError)) throw error;
+    // No strict parse failure establishes a fully screened decoded value.
+    // Every failure path can contain escaped literal keys, including numeric,
+    // duplicate-key and depth failures in otherwise native-parseable JSON.
     throw new CliError(
       "validation",
       "configuration_invalid",
       "Configuration failed offline validation.",
-      details,
+      {
+        valid: false,
+        diagnostics: {
+          ...error.diagnostics,
+          issues: error.diagnostics.issues.map((issue) => ({ ...issue, path: "" })),
+        },
+        calculationChecked: false,
+      },
+    );
+  }
+  rejectCredentials(value, secrets);
+  const checked = validateProjectConfigurationV1(value);
+  if (!checked.valid) {
+    rejectCredentials(checked, secrets);
+    throw new CliError(
+      "validation",
+      "configuration_invalid",
+      "Configuration failed offline validation.",
+      checked,
     );
   }
   return checked;

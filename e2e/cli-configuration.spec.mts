@@ -85,6 +85,17 @@ function success<T>(envelope: Envelope): T {
   expect(envelope.exitCode).toBe(0);
   return envelope.data as T;
 }
+function primaryPlanPayload(envelope: Envelope): ProjectConfigurationPlanReadV1 {
+  const value = success<ProjectConfigurationPlanReadV1 & { recovered: boolean }>(envelope);
+  expect(Object.hasOwn(value, "recovered")).toBe(true);
+  const { recovered, ...payload } = value;
+  // Recovery belongs to the CLI envelope, not the strict API wrapper. Removing
+  // only this explicitly checked field leaves every unexpected API key visible
+  // to the unchanged contract validator.
+  expect(recovered).toBe(false);
+  expect(validateProjectConfigurationPlanReadV1(payload)).toBe(true);
+  return payload;
+}
 function denied(envelope: Envelope, category: string, code: string, exitCode: number) {
   expect(envelope.ok).toBe(false);
   expect(envelope.error?.category).toBe(category);
@@ -329,7 +340,7 @@ async function plan(
   const file = await inputFile(info, cli, `${name}-configuration`, configuration);
   const out = info.outputPath(`${name}-review.json`),
     planId = randomUUID();
-  const value = success<ProjectConfigurationPlanReadV1>(
+  const value = primaryPlanPayload(
     await cli.run("plan", data, auth, [
       "--file",
       file,
@@ -341,7 +352,6 @@ async function plan(
       out,
     ]),
   );
-  expect(validateProjectConfigurationPlanReadV1(value)).toBe(true);
   expect(value.status).toBe("pending");
   if (!value.plan) throw new Error("Built CLI returned no complete reviewed plan");
   expect(value.plan.planId).toBe(planId);
@@ -547,7 +557,7 @@ test("built CLI exports, validates, reviews, applies/replays and calculates 1,00
     ),
   ).toBe(true);
   const replayFile = info.outputPath("cli-1000-replayed-review.json");
-  const replay = success<ProjectConfigurationPlanReadV1>(
+  const replay = primaryPlanPayload(
     await cli.run("plan", data, auth, [
       "--file",
       validationFile,

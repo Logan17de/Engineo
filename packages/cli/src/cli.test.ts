@@ -14,6 +14,7 @@ import {
   serializeScheduleResultV1,
   validateProjectConfigurationV1,
 } from "@engineo/contracts";
+import { strictConfigurationFailures } from "../test/configuration-failures.js";
 import { destination, parseArguments, safeOrigin } from "./arguments.js";
 import { checkPlan, checkSavedReview, hash, savedReview } from "./artifacts.js";
 import { CliError, EXIT, remoteError } from "./errors.js";
@@ -476,6 +477,90 @@ test("malformed diagnostics retain safe bounded codes, counts and character offs
     await rm(dir, { recursive: true, force: true });
   }
 });
+for (const specimen of strictConfigurationFailures) {
+  for (const mode of ["offline", "authoritative", "plan"] as const) {
+    test(`strict ${specimen.label} is safely rejected during ${mode}`, async () => {
+      // Prove this exercises strict-parser failures that native JSON accepts.
+      assert.doesNotThrow(() => JSON.parse(specimen.source));
+      await cliFixture(async (dir, auth) => {
+        const file = join(dir, "strict-failure.json"),
+          out = join(dir, "pending-review.json"),
+          requests: string[] = [];
+        await writeFile(file, specimen.source);
+        await withMock(
+          async (url, init) => {
+            requests.push(`${init?.method} ${url}`);
+            assert.equal(url, `${target.apiOrigin}/auth/me`);
+            assert.equal(init?.method, "GET");
+            return response({ session: { id: session.sessionId }, user: { id: session.actorId } });
+          },
+          async () => {
+            const argv =
+              mode === "offline"
+                ? ["validate", "--offline", "--file", file]
+                : [
+                    mode === "plan" ? "plan" : "validate",
+                    ...remote,
+                    "--auth-file",
+                    auth,
+                    "--file",
+                    file,
+                    ...(mode === "plan"
+                      ? ["--plan-id", id(8), "--expected-revision", "2", "--out", out]
+                      : ["--authoritative"]),
+                  ];
+            const output = await runCli(argv);
+            assert.equal(output.exitCode, 3);
+            assert.equal(output.error?.category, "validation");
+            assert.equal(output.error?.code, "configuration_invalid");
+            assert.equal(JSON.stringify(output).includes(specimen.credential), false);
+            const details = output.error?.details as {
+              valid: boolean;
+              calculationChecked: boolean;
+              diagnostics: {
+                totalCount: number;
+                truncated: boolean;
+                issues: { code: string; path: string; message: string }[];
+              };
+            };
+            assert.equal(details.valid, false);
+            assert.equal(details.calculationChecked, false);
+            assert.equal(details.diagnostics.totalCount, 1);
+            assert.equal(details.diagnostics.truncated, false);
+            assert.equal(details.diagnostics.issues.length, 1);
+            assert.equal(details.diagnostics.issues[0]?.code, specimen.issueCode);
+            assert.equal(details.diagnostics.issues[0]?.path, "");
+            if (specimen.issueCode === "INVALID_JSON")
+              assert.match(
+                details.diagnostics.issues[0]?.message ?? "",
+                /^Malformed JSON at character \d+\.$/,
+              );
+            assert.deepEqual(
+              requests,
+              mode === "offline" ? [] : [`GET ${target.apiOrigin}/auth/me`],
+            );
+            await assert.rejects(readFile(out));
+          },
+        );
+      });
+    });
+  }
+}
+test("screened schema failures retain useful safe field paths", async () => {
+  const dir = await temporary();
+  try {
+    const file = join(dir, "schema-invalid.json"),
+      value = configuration();
+    value.input.project.name = "";
+    await writeFile(file, JSON.stringify(value));
+    const output = await runCli(["validate", "--file", file, "--offline"]);
+    assert.equal(output.exitCode, 3);
+    assert.equal(output.error?.code, "configuration_invalid");
+    assert.ok(JSON.stringify(output.error?.details).includes("input.project.name"));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
 test("actual offline entry emits one safe exit-3 envelope and empty stderr for malformed keys", async () => {
   const dir = await temporary();
   try {
@@ -571,19 +656,6 @@ test("transport bounds actual streamed bytes and request envelope without trusti
       assert.equal(calls, 1);
     },
   );
-});
-test("unsafe TLS environment is refused before any request", () => {
-  const original = process.env.NODE_TLS_REJECT_UNAUTHORIZED;
-  process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
-  try {
-    assert.throws(
-      () => new ApiClient(target, session, Date.now() + 1000, new AbortController().signal),
-      (error: unknown) => error instanceof CliError && error.code === "insecure_tls_environment",
-    );
-  } finally {
-    if (original === undefined) delete process.env.NODE_TLS_REJECT_UNAUTHORIZED;
-    else process.env.NODE_TLS_REJECT_UNAUTHORIZED = original;
-  }
 });
 test("explicit API interruptions have their own exit category", () => {
   assert.equal(remoteError(409, { error: "configuration_interrupted" }).category, "interrupted");
