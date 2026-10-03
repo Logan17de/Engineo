@@ -551,7 +551,9 @@ function validateShape(value: unknown, rule: Rule, path: string, issues: Diagnos
         invalid(`Expected between ${rule.min} and ${rule.max} array items.`);
       const descriptors = Object.getOwnPropertyDescriptors(value);
       for (const key of Object.keys(descriptors)) {
-        if (key !== "length" && !/^(0|[1-9]\d*)$/.test(key))
+        // A canonical numeric string is not necessarily an array index:
+        // e.g. "4294967295" is an extra property and does not extend length.
+        if (key !== "length" && (!/^(0|[1-9]\d*)$/.test(key) || Number(key) >= value.length))
           issues.add(
             "UNKNOWN_PROPERTY",
             childPath(path, key),

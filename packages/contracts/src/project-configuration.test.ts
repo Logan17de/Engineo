@@ -982,6 +982,79 @@ test("direct validation rejects non-JSON array properties and accessors without 
   assert.equal(invoked, false);
 });
 
+test("direct validation rejects numeric-looking non-index array properties throughout configuration", () => {
+  const paths: (string | number)[][] = [
+    ["input", "calendars"],
+    ["input", "wbs"],
+    ["input", "activities"],
+    ["input", "relationships"],
+    ...["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"].map((day) => [
+      "input",
+      "calendars",
+      0,
+      "week",
+      day,
+    ]),
+    ["input", "calendars", 0, "exceptions"],
+    ["input", "calendars", 0, "exceptions", 0, "workingIntervals"],
+    ["input", "calendars", 0, "exceptions", 1, "workingIntervals"],
+    ["input", "activities", 0, "constraints"],
+    ["input", "activities", 1, "constraints"],
+  ];
+  const keys = [
+    "4294967295",
+    "4294967296",
+    "9007199254740991",
+    "9007199254740992",
+    "9007199254740993",
+    "999999999999999999999999999999999999999",
+  ];
+  for (const path of paths) {
+    for (const key of keys) {
+      for (const enumerable of [true, false]) {
+        const value = configuration();
+        const parent = objectAt(value, path.slice(0, -1));
+        const target = parent[present(path.at(-1))];
+        assert.ok(Array.isArray(target));
+        const length = target.length;
+        const extra = { mustNotBeSilentlyDropped: true };
+        Object.defineProperty(target, key, { value: extra, enumerable, configurable: true });
+        assert.equal(target.length, length, "the extra property is not a real array index");
+        const issuePath = path
+          .reduce<string>(
+            (result, part) =>
+              typeof part === "number" ? `${result}[${part}]` : `${result}.${part}`,
+            "",
+          )
+          .slice(1);
+        hasIssue(value, "UNKNOWN_PROPERTY", `${issuePath}[${JSON.stringify(key)}]`);
+        assert.equal(target.length, length);
+        assert.equal(Object.getOwnPropertyDescriptor(target, key)?.value, extra);
+      }
+    }
+  }
+});
+
+test("non-index array accessors are rejected without reading them or changing dense indices", () => {
+  let invoked = 0;
+  for (const key of ["4294967295", "4294967296", "9007199254740993"]) {
+    for (const enumerable of [true, false]) {
+      const value = configuration();
+      const target = value.input.activities;
+      const indices = [...target];
+      const get = () => {
+        invoked++;
+        throw new Error("A non-index accessor must never execute.");
+      };
+      Object.defineProperty(target, key, { get, enumerable, configurable: true });
+      hasIssue(value, "UNKNOWN_PROPERTY", `input.activities[${JSON.stringify(key)}]`);
+      assert.equal(invoked, 0);
+      assert.deepEqual([...target], indices);
+      assert.equal(Object.getOwnPropertyDescriptor(target, key)?.get, get);
+    }
+  }
+});
+
 test("direct validation rejects nonordinary array prototypes throughout configuration", () => {
   const paths: (string | number)[][] = [
     ["input", "calendars"],
