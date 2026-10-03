@@ -10,6 +10,7 @@ function report(clean = 19, failed = 0) {
       {
         invocations: [
           {
+            executionSuccessful: true,
             toolExecutionNotifications: sources.map((uri) => ({
               descriptor: { id: "rust/diagnostics/successfully-extracted-files" },
               locations: [
@@ -60,9 +61,14 @@ test("failed invocation and extraction diagnostics fail even with clean metrics"
   const missing = report();
   missing.runs[0].invocations = [];
   assert.throws(() => rustExtractionCoverage(missing, sources), /invocation evidence/);
-  const failed = report();
-  failed.runs[0].invocations[0].executionSuccessful = false;
-  assert.throws(() => rustExtractionCoverage(failed, sources), /failed/);
+  const missingStatus = report();
+  delete missingStatus.runs[0].invocations[0].executionSuccessful;
+  assert.throws(() => rustExtractionCoverage(missingStatus, sources), /failed/);
+  for (const status of [false, undefined, null, 0, "true", {}]) {
+    const failed = report();
+    failed.runs[0].invocations[0].executionSuccessful = status;
+    assert.throws(() => rustExtractionCoverage(failed, sources), /failed/);
+  }
   for (const diagnostic of [
     { level: "error", message: { text: "Macro expansion failed" } },
     { descriptor: { id: "rust/diagnostics/extraction-warnings" } },

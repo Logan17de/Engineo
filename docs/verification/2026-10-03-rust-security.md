@@ -56,8 +56,10 @@ After the existing high/error query gate, Rust analysis must independently pass:
   source inventory.
 - Extraction-location notifications for every tracked source, so clean counts
   cannot conceal a missing or substituted source file.
-- No failed invocation, extraction-warning/error notification or error-level
-  execution notification.
+- An explicit successful status for each invocation, with no extraction-warning/
+  error notification or error-level execution notification. Missing, null or
+  non-boolean success status fails; independent review identified this hardening
+  gap and the malformed-status regressions now cover it.
 
 Evidence artifacts are retained even if the gate fails. Query findings and
 extraction completeness remain separate checks. Changes in the producer's

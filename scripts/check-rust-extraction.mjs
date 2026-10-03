@@ -47,7 +47,8 @@ export function rustExtractionCoverage(report, sources) {
     }
     const extracted = new Set();
     for (const invocation of run.invocations) {
-      if (invocation.executionSuccessful === false) throw new Error("Rust extraction failed");
+      if (invocation.executionSuccessful !== true)
+        throw new Error("Rust extraction failed or successful invocation evidence is missing");
       for (const notification of invocation.toolExecutionNotifications ?? []) {
         if (
           notification.level === "error" ||
