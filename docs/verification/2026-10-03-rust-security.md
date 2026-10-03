@@ -93,3 +93,37 @@ moving generated build outputs remains pending.
 Dependency Review remains failed because Dependency Graph is disabled. No
 repository setting or merge is changed. PM exact-head review and operational
 release gates remain required.
+
+## Subsequent verified foundation integration
+
+The corrected coverage implementation was later included in reviewed PR #59 and
+atomic integration PR #60. Integration head `b29dd49f7d16bb79ab647d7f7875222d2b384d1a`,
+synthetic merge `008a227565f46aa008563b14422daaddfedf4bff`, and merged main
+`b36ecc4d9483b925583bbf9a673c0040436a63e1` all have exactly tree
+`f626302e6bf0ffa68e55c6d060c0ca62b3bdddee`. CodeQL `37102353980` passed
+both language query gates and the Rust inventory gate: **19 clean sources,
+zero failed, 19 expected**, with empty high/error finding arrays.
+
+Dependency Graph was explicitly authorized and enabled after the earlier
+blocked runs. Main-based Dependency Review `37102353955` successfully reviewed
+the complete accumulated dependency delta. PR #60 was independently approved
+and merged atomically. The separately corrected actual-main head
+`54678e0e055d9450f328541b2551a1372b9ba3b3` subsequently passed CI
+`37105521355` and CodeQL `37105521386`; downloaded SARIF confirmed empty
+high/error findings and 19 individually matched clean Rust sources / zero errors.
+The historical failures above are not current coverage status.
+Operational release, provenance and deployment gates remain incomplete.
+
+## Initial durable-calculation draft coverage
+
+Draft PR #63 added the declared engine-source identity build script and its CLI
+identity test, bringing the tracked inventory to 21 Rust files. Exact head
+`ca58d83a9370a2b88b5f15304a70102ae1f9a835` passed
+[CodeQL `37106301496`](https://github.com/Logan17de/Engineo/actions/runs/37106301496):
+both language query gates, **21 clean sources / zero failed / 21 expected**,
+and empty high/error findings. The build script and identity test are covered;
+the foundation's earlier 19-file count was not reused as acceptance.
+
+That head is not approved: its separate browser CI failed repeated-click and
+fixture-quota cases. Every correction still needs fresh exact-head CodeQL,
+extraction completeness, dependency review and full browser/CI acceptance.

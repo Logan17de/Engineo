@@ -5,7 +5,9 @@ export {
   type ActivityCsvChangeV1,
   type ActivityCsvPreviewV1,
 } from "./activity-csv.js";
+export type { ScheduleCalculationMetadataV1 } from "./calculation.js";
 export type { ActivityScheduleResultV1, EngineScheduleResultV1 } from "./result.js";
+export { serializeScheduleResultV1 } from "./result-serialization.js";
 export {
   type ActivityConstraintV1,
   type ActivityInputV1,

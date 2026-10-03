@@ -346,6 +346,25 @@ details form input {
   flex-wrap: wrap;
   gap: 8px;
 }
+.toolbarActions > button {
+  flex-shrink: 0;
+}
+/* Reserve changing labels and the cancel slot so a repeated click stays on its action. */
+.stableToolbarLabel {
+  display: inline-grid;
+  white-space: nowrap;
+}
+.stableToolbarLabel > span {
+  grid-area: 1 / 1;
+}
+.stableToolbarLabel::before {
+  content: attr(data-stable-label);
+  grid-area: 1 / 1;
+  visibility: hidden;
+}
+.requestStop[aria-hidden="true"] {
+  visibility: hidden;
+}
 .summaryStrip {
   display: grid;
   grid-template-columns: repeat(4, 1fr);

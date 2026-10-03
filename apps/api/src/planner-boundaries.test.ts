@@ -369,6 +369,7 @@ test("Planner boundary regressions use genuine tenant data and database snapshot
         const cancellable = buildApp({
           database: db,
           scheduleRunner: {
+            getEngineVersion: () => real.getEngineVersion(),
             async calculate(input, signal) {
               if (calls++ > 0) {
                 assert.equal(busy, false);

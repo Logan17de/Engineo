@@ -21,6 +21,10 @@ import {
   previewActivityCsv,
 } from "../interchange/activity-csv.js";
 import {
+  CalculationAccessError,
+  CalculationRepository,
+} from "../repositories/calculation-repository.js";
+import {
   type CreateActivityInput,
   type CreateCalendarInput,
   type CreateRelationshipInput,
@@ -165,6 +169,15 @@ function validInstant(value: string): boolean {
 }
 
 function sendMutationError(reply: FastifyReply, error: unknown): void {
+  if (error instanceof CalculationAccessError) {
+    void reply.code(error.statusCode).send({ error: error.message });
+    return;
+  }
+  if (error instanceof ScheduleEngineError) {
+    if (error.statusCode === 503) reply.header("Retry-After", "1");
+    void reply.code(error.statusCode).send({ error: error.code, message: error.message });
+    return;
+  }
   if (error instanceof ActivityCsvError) {
     void reply.code(422).send({ error: "invalid_csv", message: error.message });
     return;
@@ -204,6 +217,36 @@ export function registerProjectRoutes(
 ): void {
   const projects = new ProjectRepository(db);
   const planner = new PlannerRepository(db);
+  const calculations = new CalculationRepository(db);
+  const engineVersion = async () => await scheduleRunner.getEngineVersion();
+
+  app.get<{ Params: ProjectParams }>(
+    "/organizations/:organizationId/projects/:projectId/schedule/result",
+    { schema: { params: schemas.projectParams } },
+    async (request, reply) => {
+      const { organizationId, projectId } = request.params;
+      const principal = await projectPrincipal(
+        db,
+        request,
+        reply,
+        organizationId,
+        projectId,
+        "project.read",
+      );
+      if (!principal) return;
+      try {
+        const stored = await calculations.current(
+          tenantContext(organizationId, principal.userId, request.id),
+          projectId,
+          principal,
+          await engineVersion(),
+        );
+        return reply.header("Cache-Control", "no-store").send(stored);
+      } catch (error) {
+        sendMutationError(reply, error);
+      }
+    },
+  );
 
   app.get<{ Params: ProjectParams }>(
     "/organizations/:organizationId/projects/:projectId/activities/export",
@@ -551,32 +594,31 @@ export function registerProjectRoutes(
       reply.raw.once("close", disconnected);
       if (request.raw.aborted || reply.raw.destroyed) controller.abort();
       try {
-        const result = await scheduleRunner.calculate(snapshot.input, controller.signal);
-        await appendAuditEvent(db, {
-          organizationId: request.params.organizationId,
-          actorType: "user",
-          actorId: principal.userId,
-          action: "schedule.run",
-          resourceType: "project",
-          resourceId: request.params.projectId,
-          source: "api",
-          correlationId: request.id,
-          payload: {
-            revision: snapshot.revision,
-            inputHash: createHash("sha256")
-              .update(serializeScheduleInputV1(snapshot.input))
-              .digest("hex"),
-            resultHash: createHash("sha256").update(JSON.stringify(result)).digest("hex"),
-            engineContractVersion: 1,
-          },
-        });
-
-        await reply.send({ revision: snapshot.revision, result });
+        const version = await engineVersion();
+        const context = tenantContext(request.params.organizationId, principal.userId, request.id);
+        let stored = await calculations.reuse(
+          context,
+          request.params.projectId,
+          principal,
+          snapshot,
+          version,
+          controller.signal,
+        );
+        if (!stored) {
+          const result = await scheduleRunner.calculate(snapshot.input, controller.signal);
+          stored = await calculations.finalize(
+            context,
+            request.params.projectId,
+            principal,
+            snapshot,
+            result,
+            version,
+            controller.signal,
+          );
+        }
+        await reply.header("Cache-Control", "no-store").send(stored);
       } catch (error) {
-        if (error instanceof ScheduleEngineError) {
-          if (error.statusCode === 503) reply.header("Retry-After", "1");
-          await reply.code(error.statusCode).send({ error: error.code, message: error.message });
-        } else throw error;
+        sendMutationError(reply, error);
       } finally {
         request.raw.off("aborted", abort);
         reply.raw.off("close", disconnected);

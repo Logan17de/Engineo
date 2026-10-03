@@ -6,8 +6,11 @@ import {
 } from "@engineo/contracts";
 
 export interface ScheduleRunner {
+  /** Declared compatibility version. It does not attest the configured executable. */
+  getEngineVersion(): Promise<string>;
   calculate(input: EngineProjectInputV1, signal?: AbortSignal): Promise<EngineScheduleResultV1>;
 }
+export const SCHEDULE_MAX_BYTES = 32 * 1024 * 1024;
 export class ScheduleEngineError extends Error {
   constructor(
     public readonly code: string,
@@ -31,9 +34,24 @@ function record(value: unknown): value is Record<string, unknown> {
 function instant(value: unknown): value is string {
   return typeof value === "string" && isRfc3339Instant(value);
 }
-function validResult(value: unknown, input: EngineProjectInputV1): value is EngineScheduleResultV1 {
+function knownKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  return Object.keys(value).every((key) => keys.includes(key));
+}
+export function validResult(
+  value: unknown,
+  input: EngineProjectInputV1,
+): value is EngineScheduleResultV1 {
   if (
     !record(value) ||
+    !knownKeys(value, [
+      "schemaVersion",
+      "projectFinish",
+      "lateProjectFinish",
+      "controllingFinishActivity",
+      "controllingPath",
+      "activities",
+      "constraintViolations",
+    ]) ||
     value.schemaVersion !== 1 ||
     !instant(value.projectFinish) ||
     !instant(value.lateProjectFinish) ||
@@ -46,7 +64,8 @@ function validResult(value: unknown, input: EngineProjectInputV1): value is Engi
   if (
     Object.keys(value.activities).length !== ids.size ||
     (value.controllingFinishActivity !== null &&
-      !ids.has(String(value.controllingFinishActivity))) ||
+      (typeof value.controllingFinishActivity !== "string" ||
+        !ids.has(value.controllingFinishActivity))) ||
     value.controllingPath.some((id) => typeof id !== "string" || !ids.has(id))
   )
     return false;
@@ -54,6 +73,16 @@ function validResult(value: unknown, input: EngineProjectInputV1): value is Engi
     const row = value.activities[id];
     if (
       !record(row) ||
+      !knownKeys(row, [
+        "earlyStart",
+        "earlyFinish",
+        "lateStart",
+        "lateFinish",
+        "critical",
+        "totalFloatMinutes",
+        "freeFloatMinutes",
+        "drivingCauses",
+      ]) ||
       !instant(row.earlyStart) ||
       !instant(row.earlyFinish) ||
       !instant(row.lateStart) ||
@@ -67,11 +96,20 @@ function validResult(value: unknown, input: EngineProjectInputV1): value is Engi
     for (const cause of row.drivingCauses) {
       if (
         !record(cause) ||
+        !knownKeys(cause, [
+          "kind",
+          "predecessorId",
+          "relationshipType",
+          "constraintType",
+          "instant",
+          "lagMinutes",
+        ]) ||
         typeof cause.kind !== "string" ||
         (cause.predecessorId !== undefined &&
           (typeof cause.predecessorId !== "string" || !ids.has(cause.predecessorId))) ||
         (cause.relationshipType !== undefined &&
-          !["FS", "SS", "FF", "SF"].includes(String(cause.relationshipType))) ||
+          (typeof cause.relationshipType !== "string" ||
+            !["FS", "SS", "FF", "SF"].includes(cause.relationshipType))) ||
         (cause.constraintType !== undefined && typeof cause.constraintType !== "string") ||
         (cause.instant !== undefined && !instant(cause.instant)) ||
         (cause.lagMinutes !== undefined && !Number.isSafeInteger(cause.lagMinutes))
@@ -82,6 +120,7 @@ function validResult(value: unknown, input: EngineProjectInputV1): value is Engi
   return value.constraintViolations.every(
     (row) =>
       record(row) &&
+      knownKeys(row, ["activityId", "constraintType", "constraintInstant", "actualInstant"]) &&
       typeof row.activityId === "string" &&
       ids.has(row.activityId) &&
       typeof row.constraintType === "string" &&
@@ -98,12 +137,14 @@ export class ProcessScheduleRunner implements ScheduleRunner {
   private readonly maxConcurrent: number;
   private active = 0;
   private readonly projects = new Set<string>();
+  private identity: Promise<string> | undefined;
+  private resolvedEngineVersion: string | undefined;
 
   constructor(options: ProcessScheduleRunnerOptions = {}) {
     this.binaryPath = options.binaryPath ?? process.env.ENGINEO_SCHEDULER_BIN ?? "engineo-schedule";
     this.timeoutMs = options.timeoutMs ?? 30_000;
-    this.maxInputBytes = options.maxInputBytes ?? 32 * 1024 * 1024;
-    this.maxOutputBytes = options.maxOutputBytes ?? 32 * 1024 * 1024;
+    this.maxInputBytes = options.maxInputBytes ?? SCHEDULE_MAX_BYTES;
+    this.maxOutputBytes = options.maxOutputBytes ?? SCHEDULE_MAX_BYTES;
     this.maxConcurrent = options.maxConcurrent ?? 2;
     for (const value of [
       this.timeoutMs,
@@ -114,6 +155,90 @@ export class ProcessScheduleRunner implements ScheduleRunner {
       if (!Number.isSafeInteger(value) || value < 1)
         throw new Error("Invalid engine boundary configuration");
     }
+  }
+
+  async getEngineVersion(): Promise<string> {
+    if (!this.identity) {
+      this.identity = this.readEngineVersion().catch((error: unknown) => {
+        this.identity = undefined;
+        throw error;
+      });
+    }
+    return await this.identity;
+  }
+
+  private async readEngineVersion(): Promise<string> {
+    return await new Promise((resolve, reject) => {
+      let child: ChildProcessWithoutNullStreams;
+      try {
+        child = spawn(this.binaryPath, ["--engine-info"], {
+          stdio: ["pipe", "pipe", "pipe"],
+          env: { PATH: process.env.PATH },
+          windowsHide: true,
+        });
+      } catch {
+        reject(
+          new ScheduleEngineError(
+            "schedule_unavailable",
+            503,
+            "Calculation engine identity is unavailable.",
+          ),
+        );
+        return;
+      }
+      let output = "",
+        bytes = 0,
+        settled = false;
+      const fail = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        child.kill("SIGKILL");
+        reject(
+          new ScheduleEngineError(
+            "schedule_unavailable",
+            503,
+            "Calculation engine identity is unavailable.",
+          ),
+        );
+      };
+      const timer = setTimeout(fail, this.timeoutMs);
+      timer.unref();
+      child.on("error", fail);
+      child.stdin.on("error", fail);
+      child.stdout.on("data", (chunk: Buffer) => {
+        bytes += chunk.length;
+        if (bytes > 4096) fail();
+        else output += chunk.toString("utf8");
+      });
+      child.stderr.on("data", (chunk: Buffer) => {
+        bytes += chunk.length;
+        if (bytes > 4096) fail();
+      });
+      child.on("close", (code) => {
+        if (settled) return;
+        try {
+          const value: unknown = JSON.parse(output);
+          if (
+            code !== 0 ||
+            !record(value) ||
+            value.engineContractVersion !== 1 ||
+            typeof value.engineVersion !== "string" ||
+            !/^[A-Za-z0-9][A-Za-z0-9._/+:-]{0,127}$/.test(value.engineVersion)
+          ) {
+            fail();
+            return;
+          }
+          settled = true;
+          clearTimeout(timer);
+          this.resolvedEngineVersion = value.engineVersion;
+          resolve(value.engineVersion);
+        } catch {
+          fail();
+        }
+      });
+      child.stdin.end();
+    });
   }
 
   async calculate(
@@ -149,11 +274,15 @@ export class ProcessScheduleRunner implements ScheduleRunner {
     return await new Promise((resolve, reject) => {
       let child: ChildProcessWithoutNullStreams;
       try {
-        child = spawn(this.binaryPath, [], {
-          stdio: ["pipe", "pipe", "pipe"],
-          env: { PATH: process.env.PATH },
-          windowsHide: true,
-        });
+        child = spawn(
+          this.binaryPath,
+          this.resolvedEngineVersion ? ["--engine-version", this.resolvedEngineVersion] : [],
+          {
+            stdio: ["pipe", "pipe", "pipe"],
+            env: { PATH: process.env.PATH },
+            windowsHide: true,
+          },
+        );
       } catch {
         this.active--;
         this.projects.delete(input.project.id);

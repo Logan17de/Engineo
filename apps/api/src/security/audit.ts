@@ -17,14 +17,15 @@ export interface AuditEventInput {
 export async function appendAuditEvent(
   db: DatabaseExecutor,
   event: AuditEventInput,
-): Promise<void> {
+): Promise<string> {
+  const id = randomUUID();
   await db`
     INSERT INTO audit_events (
       id, organization_id, actor_type, actor_id, action,
       resource_type, resource_id, source, correlation_id, payload
     )
     VALUES (
-      ${randomUUID()},
+      ${id},
       ${event.organizationId},
       ${event.actorType},
       ${event.actorId},
@@ -36,4 +37,5 @@ export async function appendAuditEvent(
       ${db.json(event.payload ?? {})}
     )
   `;
+  return id;
 }

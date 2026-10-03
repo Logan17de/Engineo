@@ -9,6 +9,7 @@ import {
   type EngineProjectInputV1,
   type EngineScheduleResultV1,
   type RelationshipInputV1,
+  type ScheduleCalculationMetadataV1,
   serializeScheduleInputV1,
   validateScheduleInputV1,
   WEEKDAYS,
@@ -27,6 +28,7 @@ import {
   sessionGeneration,
   subscribeSessionChanges,
 } from "./api";
+import { type CalculationSnapshot, matchesStoredCalculation } from "./saved-calculation";
 
 type Organization = { id: string; name: string; slug: string; role: string };
 type Project = {
@@ -75,6 +77,7 @@ export default function Planner() {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [permissions, setPermissions] = useState<Permissions>({ write: false, scheduleRun: false });
   const [result, setResult] = useState<EngineScheduleResultV1 | null>(null);
+  const [calculation, setCalculation] = useState<ScheduleCalculationMetadataV1 | null>(null);
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState("");
   const lock = useRef(false);
@@ -107,6 +110,8 @@ export default function Planner() {
     ? constraintActivity
     : (input?.activities[0]?.id ?? "");
   const editable = permissions.write && !busy;
+  const canStopRequest =
+    busy === "Saving and calculating" || busy === "Previewing CSV" || busy === "Applying CSV";
   const projectPath = input ? `/organizations/${organizationId}/projects/${input.project.id}` : "";
   const currentState = useRef({ user, organizationId, snapshot, dirty });
   currentState.current = { user, organizationId, snapshot, dirty };
@@ -118,6 +123,7 @@ export default function Planner() {
     setSnapshot(null);
     setPermissions({ write: false, scheduleRun: false });
     setResult(null);
+    setCalculation(null);
     setDirty(false);
     setCalendarId("");
     setConstraintActivity("");
@@ -174,16 +180,45 @@ export default function Planner() {
   }, []);
   const openProject = useCallback(async (org: string, id: string, signal?: AbortSignal) => {
     const path = `/organizations/${org}/projects/${id}`;
-    const [loaded, detail] = await Promise.all([
+    let resultReadError: string | null = null;
+    const [loaded, detail, saved] = await Promise.all([
       api<Snapshot>(`${path}/schedule`, { signal }),
       api<{ permissions: Permissions }>(path, { signal }),
+      api<CalculationSnapshot>(`${path}/schedule/result`, { signal }).catch((error) => {
+        if (
+          signal?.aborted ||
+          (error instanceof ApiError && [401, 403, 404, 409].includes(error.status))
+        )
+          throw error;
+        if (error instanceof ApiError && error.code.startsWith("schedule_"))
+          resultReadError = error.message;
+        // A transient optional result-read failure does not hide the saved plan.
+        return null;
+      }),
     ]);
+    const matched = saved ? await matchesStoredCalculation(saved, loaded) : false;
     signal?.throwIfAborted();
+    if (sessionCookieChanged())
+      throw new ApiError(409, "session_changed", "Your sign-in changed. Sign in again.");
     setSnapshot(loaded);
     setCsvFile(null);
     setCsvPreview(null);
     setPermissions(detail.permissions);
-    setResult(null);
+    setResult(matched && saved ? saved.result : null);
+    setCalculation(matched && saved ? saved.calculation : null);
+    if (resultReadError) setError(resultReadError);
+    if (!saved)
+      setNotice("Saved calculation could not be loaded. Reload the saved version to try again.");
+    else if (saved.revision !== loaded.revision)
+      setNotice("The project changed while loading its calculation. Reload the saved version.");
+    else if ((saved.result || saved.calculation) && !matched)
+      setNotice(
+        "Saved calculation could not be verified. Reload or recalculate before using dates.",
+      );
+    else if (matched && saved.result)
+      setNotice(
+        `Saved calculation restored · finish ${displayInstant(saved.result.projectFinish)} UTC`,
+      );
     setDirty(false);
     setConstraintActivity(loaded.input.activities[0]?.id ?? "");
     setCalendarId(loaded.input.project.defaultCalendarId);
@@ -251,6 +286,8 @@ export default function Planner() {
           if (draft && selected === draft.organizationId) {
             if (current.permissions.write) {
               setSnapshot(draft.snapshot);
+              setResult(null);
+              setCalculation(null);
               setDirty(true);
               setCalendarId(draft.snapshot.input.project.defaultCalendarId);
               setConstraintActivity(draft.snapshot.input.activities[0]?.id ?? "");
@@ -277,7 +314,12 @@ export default function Planner() {
         if (controller.signal.aborted) return;
         if (error instanceof ApiError && error.code === "session_changed") {
           invalidateAccount(false, error.message);
-        } else if (!(error instanceof ApiError) || error.status !== 401) setError(error.message);
+        } else if (error instanceof ApiError && error.status === 401) {
+          // An ordinary anonymous first visit stays quiet. Expiry after a
+          // verified identity must clear the partly initialized workspace.
+          if (currentSessionId() || currentState.current.user || recovery.current)
+            invalidateAccount(true, error.message);
+        } else setError(error.message);
       })
       .finally(() => {
         if (!controller.signal.aborted) setReady(true);
@@ -441,6 +483,7 @@ export default function Planner() {
     setDirty(true);
     setCsvPreview(null);
     setResult(null);
+    setCalculation(null);
     setNotice("");
   }
   function editActivity(id: string, patch: Partial<ActivityInputV1>) {
@@ -451,15 +494,89 @@ export default function Planner() {
       ),
     }));
   }
-  async function calculate(signal: AbortSignal, revision: number) {
-    const data = await api<{ revision: number; result: EngineScheduleResultV1 }>(
-      `${projectPath}/schedule/run`,
-      { method: "POST", body: { expectedRevision: revision }, signal },
-    );
-    if (data.revision !== revision)
-      throw new Error("Calculation version changed. Reload the project.");
+  async function calculate(
+    signal: AbortSignal,
+    revision: number,
+    expectedInput: EngineProjectInputV1,
+  ) {
+    let data: CalculationSnapshot;
+    let recovered = false;
+    try {
+      data = await api<CalculationSnapshot>(`${projectPath}/schedule/run`, {
+        method: "POST",
+        body: { expectedRevision: revision },
+        signal,
+      });
+    } catch (error) {
+      if (
+        error instanceof ApiError &&
+        ["schedule_invalid_output", "schedule_result_conflict", "schedule_output_limit"].includes(
+          error.code,
+        )
+      ) {
+        setResult(null);
+        setCalculation(null);
+      }
+      if (
+        signal.aborted ||
+        !(
+          error instanceof TypeError ||
+          error instanceof SyntaxError ||
+          (error instanceof ApiError &&
+            error.status >= 500 &&
+            ["request_failed", "temporarily_unavailable", "internal_error"].includes(error.code))
+        )
+      )
+        throw error;
+      // An interrupted response may follow a committed calculation. Read its
+      // authoritative state rather than silently issuing a second mutation.
+      let saved: CalculationSnapshot;
+      try {
+        saved = await api<CalculationSnapshot>(`${projectPath}/schedule/result`, { signal });
+      } catch (readError) {
+        if (
+          readError instanceof ApiError &&
+          ["schedule_invalid_output", "schedule_result_conflict", "schedule_output_limit"].includes(
+            readError.code,
+          )
+        ) {
+          setResult(null);
+          setCalculation(null);
+        }
+        if (
+          readError instanceof ApiError &&
+          ([401, 403, 404, 409].includes(readError.status) ||
+            readError.code.startsWith("schedule_"))
+        )
+          throw readError;
+        throw error;
+      }
+      if (!(await matchesStoredCalculation(saved, { revision, input: expectedInput }))) {
+        setResult(null);
+        setCalculation(null);
+        throw error;
+      }
+      data = saved;
+      recovered = true;
+    }
+    if (
+      !(await matchesStoredCalculation(data, { revision, input: expectedInput })) ||
+      !data.result
+    ) {
+      setResult(null);
+      setCalculation(null);
+      throw new Error(
+        "Calculation could not be verified for this saved version. Reload the project.",
+      );
+    }
+    signal.throwIfAborted();
+    if (sessionCookieChanged())
+      throw new ApiError(409, "session_changed", "Your sign-in changed. Sign in again.");
     setResult(data.result);
-    setNotice(`Schedule calculated · finish ${displayInstant(data.result.projectFinish)} UTC`);
+    setCalculation(data.calculation);
+    setNotice(
+      `${recovered ? "Recovered saved calculation" : "Schedule calculated"} · finish ${displayInstant(data.result.projectFinish)} UTC`,
+    );
   }
   function saveAndCalculate() {
     if (!snapshot) return;
@@ -486,7 +603,17 @@ export default function Planner() {
         setNotice("Edits saved.");
         await loadProjects(organizationId, signal);
       }
-      if (permissions.scheduleRun) await calculate(signal, revision);
+      // Always refresh before calculation, including retries after a confirmed
+      // save whose response normalization/read was interrupted. v1 timestamps
+      // and field order can differ between a draft and its persisted snapshot.
+      const current = await api<Snapshot>(`${projectPath}/schedule`, { signal });
+      signal.throwIfAborted();
+      if (current.revision !== revision)
+        throw new Error(
+          "The project changed after saving. Reload the saved version before recalculating.",
+        );
+      setSnapshot(current);
+      if (permissions.scheduleRun) await calculate(signal, revision, current.input);
     });
   }
   const discard = () =>
@@ -653,6 +780,7 @@ export default function Planner() {
                     setPermissions({ write: false, scheduleRun: false });
                     setDirty(false);
                     setResult(null);
+                    setCalculation(null);
                     await loadProjects(id, signal);
                     window.history.replaceState(null, "", `/?organization=${id}`);
                   });
@@ -712,6 +840,7 @@ export default function Planner() {
                     setSnapshot(null);
                     setDirty(false);
                     setResult(null);
+                    setCalculation(null);
                     setNotice("Organization created.");
                   });
                 }}
@@ -802,8 +931,11 @@ export default function Planner() {
               <div className="plannerToolbar">
                 <div className="revisionBadge">
                   Revision {snapshot.revision}
-                  <span className={dirty ? "unsaved" : "saved"}>
-                    {dirty ? "Unsaved edits" : "Saved"}
+                  <span
+                    className={`stableToolbarLabel ${dirty ? "unsaved" : "saved"}`}
+                    data-stable-label="Unsaved edits"
+                  >
+                    <span>{dirty ? "Unsaved edits" : "Saved"}</span>
                   </span>
                   {!permissions.write ? <span>Read only</span> : null}
                 </div>
@@ -871,20 +1003,24 @@ export default function Planner() {
                   {permissions.write ? (
                     <button
                       type="button"
-                      className="primary"
+                      className="primary stableToolbarLabel"
+                      data-stable-label="Save & recalculate"
                       disabled={Boolean(busy) || (!dirty && !permissions.scheduleRun)}
                       onClick={saveAndCalculate}
                     >
-                      {dirty ? "Save & recalculate" : "Recalculate"}
+                      <span>{dirty ? "Save & recalculate" : "Recalculate"}</span>
                     </button>
                   ) : null}
-                  {busy === "Saving and calculating" ||
-                  busy === "Previewing CSV" ||
-                  busy === "Applying CSV" ? (
-                    <button type="button" onClick={() => operation.current?.abort()}>
-                      Stop request
-                    </button>
-                  ) : null}
+                  <button
+                    type="button"
+                    className="requestStop"
+                    disabled={!canStopRequest}
+                    aria-hidden={!canStopRequest}
+                    tabIndex={canStopRequest ? undefined : -1}
+                    onClick={() => operation.current?.abort()}
+                  >
+                    Stop request
+                  </button>
                 </div>
               </div>
               <div className="summaryStrip">
@@ -1082,6 +1218,7 @@ export default function Planner() {
                                       setCsvFile(null);
                                       setCsvPreview(null);
                                       setResult(null);
+                                      setCalculation(null);
                                       await openProject(organizationId, input.project.id, signal);
                                       await loadProjects(organizationId, signal);
                                       setNotice(
@@ -1584,6 +1721,13 @@ export default function Planner() {
               {panel === "Schedule" ? (
                 <div className="panelBody">
                   <h2>Schedule controls</h2>
+                  {calculation ? (
+                    <section className="muted" aria-label="Saved calculation provenance">
+                      Saved calculation · revision {calculation.projectRevision} ·{" "}
+                      {displayInstant(calculation.calculatedAt)} UTC · engine{" "}
+                      {calculation.engineVersion}
+                    </section>
+                  ) : null}
                   <div className="controlGrid">
                     <label>
                       Project name

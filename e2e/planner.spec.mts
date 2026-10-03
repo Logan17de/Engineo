@@ -5,13 +5,14 @@ import {
   type EngineProjectInputV1,
   type EngineScheduleResultV1,
 } from "@engineo/contracts";
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
 import { createDatabase } from "../apps/api/src/db/client.js";
 import { migrateDatabase } from "../apps/api/src/db/migrate.js";
 import { tenantContext } from "../apps/api/src/db/tenant-context.js";
 import { PlannerRepository } from "../apps/api/src/repositories/planner-repository.js";
 import { ProjectRepository } from "../apps/api/src/repositories/project-repository.js";
 import { hashPassword } from "../apps/api/src/security/password.js";
+import { test } from "./fixtures.mjs";
 
 const password = "disposable-loopback-browser-fixture";
 const owner = { id: randomUUID(), email: `${randomUUID()}@example.test` };

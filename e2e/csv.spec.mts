@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
 import { createDatabase } from "../apps/api/src/db/client.js";
 import { migrateDatabase } from "../apps/api/src/db/migrate.js";
 import { tenantContext } from "../apps/api/src/db/tenant-context.js";
@@ -8,6 +8,7 @@ import { exportActivityCsv } from "../apps/api/src/interchange/activity-csv.js";
 import { PlannerRepository } from "../apps/api/src/repositories/planner-repository.js";
 import { ProjectRepository } from "../apps/api/src/repositories/project-repository.js";
 import { hashPassword } from "../apps/api/src/security/password.js";
+import { test } from "./fixtures.mjs";
 
 const db = createDatabase();
 const user = randomUUID(),
