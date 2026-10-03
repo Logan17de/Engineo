@@ -261,9 +261,21 @@ test("create/edit/recalculate 1000 activities, calendar controls, keyboard range
   await expect(
     page.getByRole("textbox", { name: "Activity 1000 name", exact: true }),
   ).toBeVisible();
-  await page
-    .getByRole("textbox", { name: "Activity 1000 name", exact: true })
-    .fill("Final package");
+  const lastActivity = page.getByRole("textbox", { name: "Activity 1000 name", exact: true });
+  for (
+    let step = 0;
+    step < 200 &&
+    !(await page.evaluate(
+      () => document.activeElement?.getAttribute("aria-label") === "Activity 1000 name",
+    ));
+    step++
+  ) {
+    await page.keyboard.press("Tab");
+  }
+  await expect(lastActivity).toBeFocused();
+  await page.keyboard.press("Control+A");
+  await page.keyboard.type("Final package");
+  await expect(lastActivity).toHaveValue("Final package");
   await page.getByRole("button", { name: "Export JSON", exact: true }).click();
   await expect(page.getByRole("alert", { name: "Error", exact: true })).toContainText(
     "Save your edits before exporting",

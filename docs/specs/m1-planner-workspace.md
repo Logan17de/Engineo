@@ -38,6 +38,23 @@ writer still produces an explicit conflict. A different account or explicit
 logout discards recovery. A save already confirmed by the API is not restored as
 an unsaved draft when the following calculation/session request fails.
 
+Planner requests bind to the public session identifier obtained from `/auth/me`.
+The API rejects a supplied `X-Engineo-Session` that differs from the cookie's
+authenticated session before authorization/mutation/export. This identifier is
+not a credential: cookie authentication, CSRF and tenant RBAC remain required.
+Non-Planner API consumers may omit the intent header; their authority is still
+their authenticated principal, never a client-provided identity.
+
+The tab also retains its CSRF-cookie fingerprint and an in-memory generation.
+Requests and decoded responses must still match them. Login/logout notifications
+invalidate other tabs; focus/visibility checks and local cookie comparison cover
+browsers without BroadcastChannel. These checks cancel obsolete operations and
+clear old account/project state. A pending recovery verifies the actual account
+when a new shared cookie appears; another account cannot retain its draft.
+Notifications contain no credentials and no project data is stored in browser
+storage. Explicit accepted logout clears the draft before awaiting revocation;
+an already-expired session counts as signed out and cannot resurrect that draft.
+
 ## Accessibility and export
 
 The activity table uses semantic headers, indexed virtual rows, labelled inputs

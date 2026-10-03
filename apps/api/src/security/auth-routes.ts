@@ -172,6 +172,7 @@ export function registerAuthRoutes(
 
     reply.header("Cache-Control", "no-store");
     await reply.send({
+      session: { id: principal.sessionId },
       user: {
         id: principal.userId,
         email: principal.email,

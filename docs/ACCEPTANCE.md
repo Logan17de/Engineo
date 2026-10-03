@@ -31,6 +31,7 @@ and add an evidence record under `docs/verification/` with each reviewed increme
 | M0 scheduling | Domain and versioned JSON; graph/cycles; work calendars/DST; FS/SS/FF/SF + lag; early/late dates; float; milestones/constraints; controlling path; deterministic golden/property fixtures | existing Rust tests and reviewed JSON bridge pass; signed numeric lag boundaries do not guarantee a calendar/date can calculate extreme durations |
 | M0 scale | Document sparse/dense 1k/10k/100k runs with SHA, compiler, CPU, memory, build profile, counts and timings | passed: [measured scale record](verification/2026-10-02-m0-performance.md); RSS and repeated reference-machine budgets pending |
 | S0 supply chain | JS/Rust lockfiles, frozen/locked installs, high vulnerability gates, build-script policy, minimal CI permissions, threat model, no secrets, dependency review | frozen/locked inputs and CI/CodeQL passed on PR #54 `de1b88f`; dependency review failed because Dependency Graph is disabled, owner approval pending |
+| S0 Rust analysis coverage | Security query gates and extraction completeness are separate acceptance checks | PR #56 `8988639` CodeQL high/error gates passed, but Rust extraction reports 17 clean files and 2 files with errors (`io.rs`, `conformance.rs`, unbuilt proc-macros); completeness failed and remediation/revalidation remains pending |
 | M1 identity | Org/project creation, sessions/revocation/CSRF/Origin, server RBAC, audit, abuse controls and negative cross-tenant tests | auth/API and scoped browser negatives pass: [auth](verification/2026-10-02-auth.md), [API](verification/2026-10-02-planner-api.md), [browser](verification/2026-10-02-planner-browser.md); full identity administration/role matrix and production controls pending |
 | M1 Planner | WBS CRUD/restructure, virtualized grid and synchronized Gantt, relationships/calendars/constraints, schedule controls, 1k+ activities created/edited/recalculated in browser | scoped browser increment passed: [execution record](verification/2026-10-02-planner-browser.md); durable results, full latency characterization and remaining workflow exits pending |
 | M1 data/workflow | Data date + basic progress, filters/group/sort/saved views, project summary, CSV/spreadsheet import/export, explicit failures, data ownership | pending |
@@ -87,6 +88,11 @@ merge only after that review. Continue independent implementation while waiting.
   Planner API and signed-lag delta. CI `37017343328` and CodeQL `37017343490`
   passed; Dependency Review `37017343803` failed on disabled Dependency Graph.
 - The Planner browser increment follows #55; exact publication/checks belong in
-  its draft PR. Its local five-case acceptance run passed.
+  draft PR #56. Head `898863995600bf2ea329f49619ebf1c0b8d936c9` passed CI
+  `37021742551` and CodeQL `37021742356`, but PM rejected account/session-state
+  behavior. The revised session-binding/logout delta has 11 passing browser
+  cases; new exact-head CI and PM approval are required. Dependency Review
+  `37021742359` failed on disabled Dependency Graph. See the
+  [session reconciliation record](verification/2026-10-03-planner-session.md).
 - Remaining M1 workflow, baselines/progress/scenarios, resource/cost/EVM,
   enterprise/AI/integrations and operational gates are pending. No release is complete.

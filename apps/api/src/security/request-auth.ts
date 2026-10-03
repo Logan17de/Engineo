@@ -24,6 +24,16 @@ export async function requireSession(
     return null;
   }
 
+  // A Planner tab binds requests to the session whose identity it displays.
+  // Shared browser cookies may have changed to a different session/account.
+  // The binding is an intent check, never a replacement for cookie auth/RBAC.
+  const expectedSession = request.headers["x-engineo-session"];
+  if (expectedSession !== undefined && expectedSession !== principal.sessionId) {
+    await reply.code(409).send({ error: "session_changed" });
+    return null;
+  }
+  reply.header("X-Engineo-Session", principal.sessionId);
+
   return principal;
 }
 

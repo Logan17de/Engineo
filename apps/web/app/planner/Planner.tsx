@@ -13,7 +13,18 @@ import {
 } from "@engineo/contracts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ActivityTable, { displayInstant } from "./ActivityTable";
-import { ApiError, api } from "./api";
+import {
+  ApiError,
+  announceSessionChange,
+  api,
+  bindSession,
+  clearSessionBinding,
+  currentSessionId,
+  sessionCookieChanged,
+  sessionCookieFingerprint,
+  sessionGeneration,
+  subscribeSessionChanges,
+} from "./api";
 
 type Organization = { id: string; name: string; slug: string; role: string };
 type Project = {
@@ -62,6 +73,7 @@ export default function Planner() {
   const recovery = useRef<Recovery | null>(null);
   const operationDraft = useRef<Recovery | null>(null);
   const [hasRecovery, setHasRecovery] = useState(false);
+  const recoveryCookie = useRef<string | undefined>(undefined);
   const errorRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -80,6 +92,8 @@ export default function Planner() {
     : (input?.activities[0]?.id ?? "");
   const editable = permissions.write && !busy;
   const projectPath = input ? `/organizations/${organizationId}/projects/${input.project.id}` : "";
+  const currentState = useRef({ user, organizationId, snapshot, dirty });
+  currentState.current = { user, organizationId, snapshot, dirty };
 
   const clearWorkspace = useCallback(() => {
     setOrganizations([]);
@@ -94,6 +108,43 @@ export default function Planner() {
     setFilter("");
     setPanel("Activities");
   }, []);
+
+  const invalidateAccount = useCallback(
+    (recoverDraft: boolean, message: string) => {
+      const state = currentState.current;
+      const draft = operation.current
+        ? operationDraft.current
+        : state.user && state.snapshot && state.dirty
+          ? {
+              userId: state.user.id,
+              organizationId: state.organizationId,
+              snapshot: state.snapshot,
+            }
+          : null;
+      if (recoverDraft && draft) {
+        recovery.current = draft;
+        setHasRecovery(true);
+      } else if (!recoverDraft) {
+        recovery.current = null;
+        setHasRecovery(false);
+        window.history.replaceState(null, "", "/");
+      }
+      recoveryCookie.current = sessionCookieFingerprint();
+      initialization.current?.abort();
+      operation.current?.abort();
+      operation.current = null;
+      operationDraft.current = null;
+      lock.current = false;
+      clearSessionBinding();
+      setUser(null);
+      clearWorkspace();
+      setBusy("");
+      setNotice("");
+      setReady(true);
+      setError(message);
+    },
+    [clearWorkspace],
+  );
 
   const loadProjects = useCallback(async (id: string, signal?: AbortSignal) => {
     const data = await api<{ projects: Project[] }>(`/organizations/${id}/projects`, { signal });
@@ -120,10 +171,13 @@ export default function Planner() {
   }, []);
   const initialize = useCallback(
     async (signal?: AbortSignal) => {
-      const [me, data] = await Promise.all([
-        api<{ user: User }>("/auth/me", { signal }),
-        api<{ organizations: Organization[] }>("/organizations", { signal }),
-      ]);
+      const me = await api<{ user: User; session: { id: string } }>("/auth/me", {
+        signal,
+        sessionBound: false,
+      });
+      signal?.throwIfAborted();
+      bindSession(me.session.id);
+      const data = await api<{ organizations: Organization[] }>("/organizations", { signal });
       signal?.throwIfAborted();
       clearWorkspace();
       setUser(me.user);
@@ -169,8 +223,10 @@ export default function Planner() {
     initialization.current = controller;
     initialize(controller.signal)
       .catch((error) => {
-        if (!controller.signal.aborted && (!(error instanceof ApiError) || error.status !== 401))
-          setError(error.message);
+        if (controller.signal.aborted) return;
+        if (error instanceof ApiError && error.code === "session_changed") {
+          invalidateAccount(false, error.message);
+        } else if (!(error instanceof ApiError) || error.status !== 401) setError(error.message);
       })
       .finally(() => {
         if (!controller.signal.aborted) setReady(true);
@@ -179,7 +235,69 @@ export default function Planner() {
       controller.abort();
       operation.current?.abort();
     };
-  }, [initialize]);
+  }, [initialize, invalidateAccount]);
+  useEffect(() => {
+    let checking = false;
+    let disposed = false;
+    const verify = async () => {
+      const account = currentState.current.user;
+      const pendingRecovery = recovery.current;
+      if (
+        checking ||
+        (!account && !pendingRecovery) ||
+        (!account && operation.current) ||
+        document.visibilityState !== "visible"
+      )
+        return;
+      checking = true;
+      const started = sessionGeneration();
+      const expected = currentSessionId();
+      try {
+        const me = await api<{ user: User; session: { id: string } }>("/auth/me", {
+          sessionBound: false,
+        });
+        if (!disposed && sessionGeneration() === started) {
+          if (
+            (account && me.session.id !== expected) ||
+            (pendingRecovery && me.user.id !== pendingRecovery.userId)
+          )
+            invalidateAccount(false, "Your sign-in changed in another tab. Sign in again.");
+          else recoveryCookie.current = sessionCookieFingerprint();
+        }
+      } catch (error) {
+        if (disposed || sessionGeneration() !== started) return;
+        if (error instanceof ApiError && error.status === 401)
+          invalidateAccount(true, "Your session has ended. Sign in again.");
+        else if (error instanceof ApiError && error.code === "session_changed")
+          invalidateAccount(false, error.message);
+      } finally {
+        checking = false;
+      }
+    };
+    const focused = () => {
+      void verify();
+    };
+    const unsubscribe = subscribeSessionChanges(() =>
+      invalidateAccount(false, "Your sign-in changed in another tab. Sign in again."),
+    );
+    window.addEventListener("focus", focused);
+    document.addEventListener("visibilitychange", focused);
+    // Cookie comparison is local; it does not poll the database every second.
+    const timer = window.setInterval(() => {
+      if (
+        (currentState.current.user && sessionCookieChanged()) ||
+        (recovery.current && recoveryCookie.current !== sessionCookieFingerprint())
+      )
+        void verify();
+    }, 1000);
+    return () => {
+      disposed = true;
+      unsubscribe();
+      window.removeEventListener("focus", focused);
+      document.removeEventListener("visibilitychange", focused);
+      window.clearInterval(timer);
+    };
+  }, [invalidateAccount]);
   useEffect(() => {
     if (error) errorRef.current?.focus();
   }, [error]);
@@ -192,14 +310,20 @@ export default function Planner() {
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty, hasRecovery]);
 
-  async function perform(label: string, action: (signal: AbortSignal) => Promise<unknown>) {
+  async function perform(
+    label: string,
+    action: (signal: AbortSignal) => Promise<unknown>,
+    recoverDraft = true,
+  ) {
     if (lock.current) return;
     initialization.current?.abort();
     initialization.current = null;
     setReady(true);
     lock.current = true;
     operationDraft.current =
-      user && snapshot && dirty ? { userId: user.id, organizationId, snapshot } : null;
+      recoverDraft && user && snapshot && dirty
+        ? { userId: user.id, organizationId, snapshot }
+        : null;
     setBusy(label);
     setError("");
     setNotice("");
@@ -208,13 +332,14 @@ export default function Planner() {
     try {
       await action(controller.signal);
     } catch (error) {
+      if (operation.current !== controller) return;
+      if (error instanceof ApiError && error.code === "session_changed") {
+        invalidateAccount(false, error.message);
+        return;
+      }
       if (error instanceof ApiError && error.status === 401) {
-        if (operationDraft.current) {
-          recovery.current = operationDraft.current;
-          setHasRecovery(true);
-        }
-        setUser(null);
-        clearWorkspace();
+        invalidateAccount(recoverDraft, error.message);
+        return;
       }
       setError(
         error instanceof Error && error.name === "AbortError"
@@ -224,10 +349,12 @@ export default function Planner() {
             : "The request failed. Try again.",
       );
     } finally {
-      operation.current = null;
-      operationDraft.current = null;
-      lock.current = false;
-      setBusy("");
+      if (operation.current === controller) {
+        operation.current = null;
+        operationDraft.current = null;
+        lock.current = false;
+        setBusy("");
+      }
     }
   }
   function change(update: (input: EngineProjectInputV1) => EngineProjectInputV1) {
@@ -308,14 +435,27 @@ export default function Planner() {
                 disabled={!ready || Boolean(busy)}
                 onClick={() => {
                   if (discard())
-                    void perform("Signing out", async (signal) => {
-                      await api("/auth/logout", { method: "POST", signal });
-                      setUser(null);
-                      clearWorkspace();
-                      recovery.current = null;
-                      setHasRecovery(false);
-                      window.history.replaceState(null, "", "/");
-                    });
+                    void perform(
+                      "Signing out",
+                      async (signal) => {
+                        // Discard intent survives an expired session or failed logout.
+                        recovery.current = null;
+                        setHasRecovery(false);
+                        operationDraft.current = null;
+                        clearWorkspace();
+                        try {
+                          await api("/auth/logout", { method: "POST", signal });
+                        } catch (error) {
+                          if (!(error instanceof ApiError && error.code === "unauthenticated"))
+                            throw error;
+                        }
+                        setUser(null);
+                        clearSessionBinding();
+                        announceSessionChange();
+                        window.history.replaceState(null, "", "/");
+                      },
+                      false,
+                    );
                 }}
               >
                 Sign out
@@ -374,6 +514,7 @@ export default function Planner() {
                   },
                   signal,
                 });
+                announceSessionChange();
                 await initialize(signal);
               });
             }}
