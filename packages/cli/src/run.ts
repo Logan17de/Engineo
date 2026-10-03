@@ -22,6 +22,8 @@ import { readInput, reserveOutput } from "./files.js";
 import { exactKeys, record, rejectCredentials } from "./json.js";
 import { checkResult } from "./result.js";
 import { AmbiguousTransport, ApiClient, loadSession } from "./transport.js";
+import { VIEW_HELP } from "./view-arguments.js";
+import { runViewsCli } from "./views.js";
 
 export interface CliOutputV1 {
   schemaVersion: 1;
@@ -79,12 +81,13 @@ export async function runCli(
   argv: readonly string[],
   interruption = new AbortController().signal,
 ): Promise<CliOutputV1> {
+  if (argv[0] === "views") return runViewsCli(argv.slice(1), interruption);
   let command = "unknown";
   let secrets: readonly string[] = [];
   try {
     const args = parseArguments(argv);
     command = args.command;
-    if (command === "help") return success(command, HELP);
+    if (command === "help") return success(command, { ...HELP, views: VIEW_HELP });
     const deadline = Date.now() + Number(args.values.get("timeout-ms") ?? 30000);
     const signal = AbortSignal.any([
       interruption,

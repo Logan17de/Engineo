@@ -88,13 +88,24 @@ export class ApiClient {
     path: string,
     body?: unknown,
     maxBytes = 16 * 1024 * 1024,
+    policy: {
+      parseResponse?: (source: string, maxBytes: number) => unknown;
+      maxRequestBytes?: number;
+      preserveBom?: boolean;
+      requireNoStore?: boolean;
+    } = {},
   ): Promise<unknown> {
     const serialized = body === undefined ? undefined : JSON.stringify(body);
-    if (serialized !== undefined && Buffer.byteLength(serialized, "utf8") > 1024 * 1024)
+    if (
+      serialized !== undefined &&
+      Buffer.byteLength(serialized, "utf8") > (policy.maxRequestBytes ?? 1024 * 1024)
+    )
       throw new CliError(
         "validation",
         "request_too_large",
-        "Request envelope exceeds the API 1 MiB transport limit.",
+        policy.maxRequestBytes === undefined
+          ? "Request envelope exceeds the API 1 MiB transport limit."
+          : "Private-view request exceeds the API 64 KiB transport limit.",
       );
     const remaining = this.deadline - Date.now();
     if (remaining <= 0 || this.interruption.aborted) throw new AmbiguousTransport();
@@ -170,8 +181,11 @@ export class ApiClient {
     }
     let value: unknown;
     try {
-      const text = new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks));
-      value = parseJson(text, maxBytes);
+      const text = new TextDecoder("utf-8", {
+        fatal: true,
+        ignoreBOM: policy.preserveBom ?? false,
+      }).decode(Buffer.concat(chunks));
+      value = (policy.parseResponse ?? parseJson)(text, maxBytes);
     } catch {
       if (!response.ok) throw remoteError(response.status, null);
       return integrity();
@@ -180,6 +194,11 @@ export class ApiClient {
     if (!(response.headers.get("content-type") ?? "").toLowerCase().startsWith("application/json"))
       integrity();
     if (intent !== this.session.sessionId) integrity();
+    if (
+      policy.requireNoStore &&
+      !/(?:^|,)\s*no-store\s*(?:,|$)/i.test(response.headers.get("cache-control") ?? "")
+    )
+      integrity();
     return value;
   }
 }

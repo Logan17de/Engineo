@@ -70,6 +70,21 @@ const REMOTE_CODES = new Set([
   "project_not_found",
   "temporarily_unavailable",
   "internal_error",
+  "view_invalid",
+  "view_not_found",
+  "view_reference_stale",
+  "view_result_required",
+  "view_integrity_error",
+  "view_projection_too_large",
+  "view_base_changed",
+  "view_review_changed",
+  "view_review_expired",
+  "view_operation_window_closed",
+  "view_operation_expired",
+  "view_idempotency_conflict",
+  "view_capacity",
+  "view_rate_limit",
+  "view_revision_exhausted",
 ]);
 export function remoteError(status: number, value: unknown): CliError {
   const raw = typeof value === "object" && value !== null && "error" in value ? value.error : null;
@@ -84,7 +99,9 @@ export function remoteError(status: number, value: unknown): CliError {
         ? "capacity"
         : code === "configuration_interrupted" || code === "schedule_cancelled"
           ? "interrupted"
-          : code === "configuration_integrity_error" || code === "schedule_invalid_output"
+          : code === "configuration_integrity_error" ||
+              code === "schedule_invalid_output" ||
+              code === "view_integrity_error"
             ? "integrity"
             : status === 409
               ? "conflict"

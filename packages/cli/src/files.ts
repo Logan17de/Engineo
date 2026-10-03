@@ -9,6 +9,7 @@ export async function readInput(
   maxBytes: number,
   signal: AbortSignal,
   privateFile = false,
+  preserveBom = false,
 ): Promise<string> {
   if (path === "-") {
     if (privateFile)
@@ -17,7 +18,7 @@ export async function readInput(
         "invalid_auth_source",
         "Use a private file or an explicit descriptor above stderr for session material.",
       );
-    return await readDescriptor(0, maxBytes, signal);
+    return await readDescriptor(0, maxBytes, signal, preserveBom);
   }
   let handle: Awaited<ReturnType<typeof open>>;
   try {
@@ -52,7 +53,7 @@ export async function readInput(
         );
       chunks.push(bytes);
     }
-    return decode(Buffer.concat(chunks));
+    return decode(Buffer.concat(chunks), preserveBom);
   } catch (error) {
     if (error instanceof CliError) throw error;
     if (signal.aborted)
@@ -70,6 +71,7 @@ export async function readDescriptor(
   fd: number,
   maxBytes: number,
   signal: AbortSignal,
+  preserveBom = false,
 ): Promise<string> {
   let stream: Readable;
   try {
@@ -140,7 +142,7 @@ export async function readDescriptor(
             );
           chunks.push(bytes);
         }
-        resolve(decode(Buffer.concat(chunks)));
+        resolve(decode(Buffer.concat(chunks), preserveBom));
       })().catch(reject);
     });
   } catch (error) {
@@ -151,9 +153,9 @@ export async function readDescriptor(
     if (onAbort) signal.removeEventListener("abort", onAbort);
   }
 }
-function decode(bytes: Buffer): string {
+function decode(bytes: Buffer, preserveBom = false): string {
   try {
-    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    return new TextDecoder("utf-8", { fatal: true, ignoreBOM: preserveBom }).decode(bytes);
   } catch {
     throw new CliError("validation", "invalid_utf8", "Input must use valid UTF-8.");
   }

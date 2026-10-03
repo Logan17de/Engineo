@@ -22,7 +22,11 @@ export function sha256Text(value: unknown): value is string {
 }
 
 /** Strict duplicate-aware JSON for auth/review/response envelopes, with bounded depth. */
-export function parseJson(source: string, maxBytes: number): unknown {
+export function parseJson(
+  source: string,
+  maxBytes: number,
+  policy: { maxDepth?: number; strictIntegers?: boolean; inertKeys?: boolean } = {},
+): unknown {
   const invalid = (): never => {
     throw new CliError(
       "validation",
@@ -53,8 +57,14 @@ export function parseJson(source: string, maxBytes: number): unknown {
     return invalid();
   };
   const value = (depth: number): unknown => {
-    if (depth > 64) invalid();
+    if (depth > (policy.maxDepth ?? 64)) invalid();
     whitespace();
+    if (
+      policy.maxDepth !== undefined &&
+      depth >= policy.maxDepth &&
+      (source[offset] === "{" || source[offset] === "[")
+    )
+      invalid();
     if (source[offset] === '"') return string();
     if (source[offset] === "{") {
       offset++;
@@ -68,7 +78,11 @@ export function parseJson(source: string, maxBytes: number): unknown {
       while (offset < source.length) {
         if (source[offset] !== '"') invalid();
         const key = string();
-        if (keys.has(key)) invalid();
+        if (
+          keys.has(key) ||
+          (policy.inertKeys && ["__proto__", "prototype", "constructor"].includes(key))
+        )
+          invalid();
         keys.add(key);
         whitespace();
         if (source[offset++] !== ":") invalid();
@@ -109,6 +123,8 @@ export function parseJson(source: string, maxBytes: number): unknown {
     offset += token.length;
     const parsed: unknown = JSON.parse(token);
     if (typeof parsed === "number") {
+      if (policy.strictIntegers && !/^-?(?:0|[1-9]\d*)$/.test(token)) invalid();
+      if (policy.strictIntegers && token === "-0") invalid();
       const [mantissa = "", exponent = "0"] = token.replace(/^-/, "").toLowerCase().split("e");
       const [whole = "", fraction = ""] = mantissa.split(".");
       const digits = `${whole}${fraction}`;
@@ -127,6 +143,11 @@ export function parseJson(source: string, maxBytes: number): unknown {
   whitespace();
   if (offset !== source.length) invalid();
   return result;
+}
+
+/** Original-byte private-view response policy, separate from unchanged legacy parsing. */
+export function parseViewJson(source: string, maxBytes: number): unknown {
+  return parseJson(source, maxBytes, { maxDepth: 8, strictIntegers: true, inertKeys: true });
 }
 
 const credentialKey =

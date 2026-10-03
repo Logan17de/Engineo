@@ -83,3 +83,5 @@ export {
   type PlannerProjectionUnavailableReasonV1,
   type PlannerProjectionV1,
 } from "./planner-presentation.js";
+
+export * from "./planner-view-operations.js";
