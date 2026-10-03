@@ -1,0 +1,243 @@
+# Private Planner view API verification, 2026-10-03
+
+## Identity and ownership
+
+Base actual main commit: `1f18f945c3b598c51965d1bda86e7bde0d495cca`
+
+Base tree: `609307de35a0a4b4e81f48f44422d2cccbba3a9b`
+
+Local source branch: `feat/private-planner-view-api`. No publication, PR mutation,
+merge, real identity/credential provisioning, security setting or deployment was
+performed. Exact final source/overlay/runtime hashes and executed commands belong
+to the frozen external source manifest. This record does not claim a published
+commit identity.
+
+The eight staged dependency paths were copied from the root's verified shared
+integration and excluded from the owned patch: shared view/presentation modules
+and tests, shared specification, two project-configuration array-index guards,
+and their existing index exports. The only owned index change is the additive
+`planner-view-operations` export. No frozen scheduling serializer, Rust,
+configuration migration, GUI or CLI source is owned/changed by this API slice.
+
+## Scope and implementation
+
+See [private API protocol](../specs/planner-private-view-api-v1.md) for exact routes,
+DTOs, own-view capability, live locking, independent revision/hash, coherent source
+verification, stateless reviews, replay/window rules and finite admission limits.
+Migration `0007_planner_views.sql` is next-unused and forward-only. Applied
+0001–0006 checksums remain byte-for-byte identical.
+
+All operations use live session/tenant/project membership and exact actor ownership.
+A viewer may persist a personal presentation but cannot write a schedule. Authorize
+scope before any permanent budget/rate allocation; then charge pre-parser read
+admission even for malformed requests. New view route logging is locally silent,
+so hostile query/body source cannot escape through default pre-hook request logs.
+Legacy route logging and compact immutable database audit remain intact.
+
+Every mutation/no-op and its compact audit/receipt/storage/write admission are one
+transaction; exact historical replay causes no second effect. Current saved-source
+projection holds project SHARE and independently verifies matching real-runner
+compatibility/current calculation bytes/hashes on one transaction executor. Input-only
+views do not inspect a calculation. View methods never calculate or change schedule
+revisions/native order/IDs/times.
+
+## Executed focused evidence
+
+- Original-byte operations contract: 23 tests passed. UTF-8/BOM/duplicate decoded
+  keys/precision/depth/body bounds, static bounded diagnostics, closed DTOs,
+  complete review tamper/hash/binding/time/base guards, positive schedule revisions,
+  UTC-day supported-year edges and <=2 KiB receipts
+- First genuine PostgreSQL/API suite: 89 tests passed, zero skipped, 14.44s. Later
+  owned logging/allocation regressions and final aggregate results are listed below
+- All 16 organization/project-role intersections, absent membership, owner/admin
+  actor privacy, known foreign/unknown tenant/project/view/reference denial,
+  viewer create/update/no-op/delete plus complete unchanged schedule state
+- Cookie/session intent/CSRF/exact Origin, revoked/changed/current session,
+  old-session preview rejection and fresh-session historical receipt reads
+- Stateless full review tampering, stale/deleted WBS, exact replay after deletion,
+  no-op/audit count, concurrent CAS/duplicate claims, cancellation and wall-clock
+  session expiry after protected waits
+- Real Rust calculation-backed projection parity/current source binding, coherent
+  protected read vs a concurrent schedule mutation, stale/corrupt result behavior,
+  Native/input-only result isolation
+- View/audit/receipt/budget failures roll back atomically; 20-own/128-project limits,
+  concurrent final slot, missing/drifted counters, global/project bytes and finite
+  audit ceiling, closed/expired keys without reexecution, and 70 expired receipts
+  collected by concurrent <=64 combined maintenance batches
+- Response uncertainty used a genuine committed PostgreSQL transaction whose
+  result delivery failed, then a reopened database pool recovered the original
+  receipt and exact retry. This was an injected transport-delivery failure, not
+  a real HTTP socket disconnect or a browser abort proof
+- Built production logging regression used app.inject plus fake SQL, no listener
+  or PostgreSQL: hostile private query/body markers were absent from stdout/stderr,
+  while ordinary /health incoming-request logs remained enabled
+
+Capacity probes deliberately seed protected state in isolated fixtures to exercise
+exact boundary enforcement and rollback. They do not represent a production
+100,000-event load test or physical PostgreSQL growth/latency measurement.
+
+## Migration and standard restore
+
+Initial compiled-production migration smoke passed 23 direct SQL assertions on a
+fresh generated `TEMPLATE template0` database. It checked wrapped config hashes,
+generated bytes, finite scope allocation, strict material/audit/session bindings,
+unchanged project revision and rejection of direct counter/rate/accounting writes,
+receipt update/delete/truncate and forged-maintenance-GUC deletion. Its migration
+hash was `1ddb413482ace33fb20e6de8b1b65bb72c6a50335d50342ef35b11cf6b02a149`.
+That intermediate revision added the project trailing-hour index and then passed
+fresh API/restore runs at `7f262668be284319c465aebc2b67e5795d41c9765839a32f36cbfeacac402d93`.
+The final SQL later added a protected UTC-day high-water checkpoint, described below.
+
+Initial populated forward migration and standard pg_dump/pg_restore passed 56
+assertions; the final high-water rerun passed 68, plus all 23 genuine schema checks:
+
+- Compiled-production 0001–0006 created/populated the native project first;
+  compiled-production 0007 preserved all six ledger rows/timestamps and native state
+- Built in-process API create/update/no-op/delete and viewer-private create produced
+  two live views, six immutable receipts, eleven total audits and six rate records
+- All 26 public-table counts and sorted row-JSON SHA-256 fingerprints were identical
+  immediately after standard restore to another empty template0 database
+- Original audit trigger/function and revoked PUBLIC maintenance execution remained
+  unchanged; no disable-triggers or manual ledger/counter repair was used for restore
+- Restored config/hash/revision, private ownership, old exact historical replay with
+  no extra audit, fresh-session receipt read/old-review rejection, closed-window
+  definitive absence/rejection and expired-410 exclusion were verified
+- Original source `engineo` inventory and stale 0005 migration ledger remained
+  unchanged. Only generated fixture databases were dropped. Wrapper stopped PG
+
+Final migration SHA-256:
+`7300751669b04345967de63f649b29ff71eb715cf65f445e51550e8b2af933a4`
+
+Final high-water dump SHA-256:
+`88802b81d3de22512e99a27bd0b9428b526f1e89bfecfe4091a8d87f06eb5374`
+
+The final restore also passed simulated protected clock advancement/regression,
+NULL clock, direct checkpoint reset and maintenance-denial checks. All feature
+fingerprints stayed unchanged after rejected regressed-day admission. The exact
+production clock-reader function was restored, and no clock/trigger override was
+used in production or the original source database. Earlier hashes/logs/dump were
+retained as historical proof, not substituted for the final run.
+
+This is scoped disposable-database forward/restore evidence, not encrypted
+production backup, operational identity, measured RPO/RTO or deployment acceptance.
+
+## Independent review
+
+A read-only source reviewer found no unresolved concrete blocker after five
+reported/confirmed fixes: pre-parser malformed-body admission, admission error
+mapping, a single midnight capability clock sample, constant indexed trailing-hour
+cutoffs and default raw-URL logging. Independent pure checks passed 23 operations
+contracts, seven SQL-error mapping vectors and two immutable migration/hash source
+checks. It did not independently execute PostgreSQL/HTTP/restore/browser/Rust;
+those integration assertions remain separate evidence.
+
+## Runtime and final aggregate
+
+Pinned runtime: Node 24.19.0, pnpm 12.8.0, TypeScript 5.9.3, Rust 1.99.0,
+PostgreSQL 17.11. Tests use the existing trusted release engine binary for real
+calculation output, never a fabricated result-origin marker. Compatibility version
+is not binary attestation.
+
+Dependencies were reused from the existing frozen-lock installation. An initial
+new-worktree offline install failed because pnpm lacked platform metadata for
+`@esbuild/linux-loong64`; no network/security policy was bypassed. This is not a
+new cold-install reproducibility claim.
+
+Pinned `pnpm check:ts` executed against a fresh generated template0 source database
+using compiled production migration entry and passed: 113 contracts (including
+real 1,000-row Rust projection), 304 genuine PostgreSQL API tests, 107 existing CLI
+unit tests and 127 script/security tests, all zero failures/skips. Workspace/e2e
+TypeScript, format/lint and all production builds passed. Five preexisting
+non-null-assertion lint warnings, the Biome recommended-field deprecation and an
+existing module-type warning remained; no warning was promoted to a false clean
+claim. The new denied-path allocation and production-log regressions passed.
+Original source inventory/ledger remained unchanged and the wrapper stopped PG.
+Next.js regenerated its unowned next-env.d.ts during build; that generated change
+was restored to the exact base bytes and excluded from the owned patch.
+
+That earlier aggregate used the initial eight shared overlays. The final aggregate
+refresh includes the exact two-file shared empty-result map remediation, the
+protected UTC-day high-water checkpoint, and operation-window bounds matching
+PostgreSQL's supported year range. It passed 115 contracts, 311 genuine-DB API,
+107 existing CLI unit and 127 script/security tests, all zero failures/skips; types,
+format/lint and all production builds passed. Empty real-Rust source map corruption,
+guarded day regression/NULL/infinity, same-day lock waiting without millisecond
+ordering, private allocation denial and production logging all passed. Final
+source/runtime hashes and exact commands are frozen in the external manifest.
+No application server or browser was started. Full
+saved-view browser/GUI/CLI/new command parity, actual HTTP socket-disconnect proof,
+full exact-head CI/CodeQL/dependency review, PM review, universal latency/RSS and
+physical page/index/dead-tuple/WAL acceptance remain never run in this API slice.
+Finite logical quotas and a 100,000-event feature audit hard stop do not supply an
+archival lifecycle or cure unrelated existing append-only audit growth. The protected UTC-day high-water increment passed fresh schema/restore and API
+fixtures. Its regression simulation replaces only
+the no-argument SQL day-reader body in a disposable database, advances through the
+genuine protected transition, restores the exact production function, and verifies
+closed/absent-key admission fails without changes. It never changes an OS or
+PostgreSQL production clock, accepts a production override or resets a ledger.
+Same-day expiry remains a trusted-wall-clock assumption; no millisecond ordering
+is imposed on ordinary concurrent requests.
+
+No saved-view/M1/release acceptance is claimed.
+
+## Integration over reviewed shared main
+
+The API-only source was integrated over actual main
+`4d38a05f6c4d03551340e45691d8118df9368b50`, tree
+`c63f892d0736ed329f301fe3a08110364c5d7e88`, after the shared contract increment
+was independently reviewed, merged and verified on fresh main-push gates. All
+21 API/contract/spec implementation paths match the author's frozen source;
+only this verification record and the acceptance ledger received integration
+bookkeeping. No GUI or new application CLI view command is included.
+
+A new pinned frozen-lock install reused 91 packages with zero downloads. The
+integrated full `pnpm check` run passed between 16:53:23 and 16:55:00 UTC: 115
+contract tests, 311 genuine PostgreSQL API tests, 107 existing CLI unit tests,
+127 script tests, Rust formatting/Clippy and 51 active Rust tests. All TypeScript
+and database tests executed with zero skips; the preexisting manual Rust benchmark
+remained explicitly ignored. Workspace/e2e types, format/lint and all production
+builds passed, followed by another format/type check. The preexisting warnings
+described above remain recorded.
+
+The separate compiled HTTP and TLS suites passed all 59 and 15 cases, and all
+27 existing focused configuration-invariant SQL tests passed. The unchanged 51
+browser cases collected; no local browser or application listener was started
+for this root integration run. This HTTP/TLS evidence concerns the existing
+application CLI, not the pending private-view CLI commands or a real view-response
+socket disconnect. PostgreSQL 17.11 was stopped at 16:55:28 UTC after migration
+replay, all seven migration checksums, before/after source/runtime/engine hashes,
+the original source ledger and database inventory matched. Generated next-env
+build drift was captured and restored before those comparisons.
+
+Fresh draft-head CI, CodeQL, Dependency Review and independent PM approval are
+required before any API merge. Browser saved-view acceptance, GUI/CLI integration,
+physical retention/capacity and operational release gates remain pending.
+
+## Clean-runtime test ordering correction
+
+The initial draft head `e2924636f82e99a4ae8e5379a7fa340cccda0e16` failed CI
+`37139842192`, TypeScript job `111251803631`, in Quality checks. Eighteen private
+view groups could not import compiled `apps/api/dist/db/migrate.js`; the compiled
+production logger child also failed. HTTP, TLS, dependency audit and browser steps
+were skipped and are not passing evidence. The initial local integration already
+had emitted runtime, so it did not establish clean-checkout ordering. Its successful
+checks remain scoped historical evidence, not a substitute for the failed CI.
+
+The explicit API test command now builds its contracts dependency and production
+API runtime before executing the unchanged tests. Compiled migration and production
+logger assertions remain intact. A separate fresh tracked-only worktree had no API,
+contracts or CLI `dist` output after normal frozen installation or immediately
+before `pnpm check`; no provisional build or migration preceded the aggregate.
+That run passed from 17:28:02 to 17:29:54 UTC: 115 contracts, 311 genuine-DB API,
+107 existing CLI, 127 scripts and 51 active Rust tests, with zero TypeScript/database
+skips and the preexisting ignored manual Rust benchmark. All builds, postbuild
+types/format, 27 focused SQL, 59 built HTTP and 15 built TLS checks passed. All 51
+existing browser cases collected only. Production migration replay, source/runtime/
+engine hashes and original database ledger/inventory guards matched, and the
+wrapper stopped PostgreSQL at 17:30:21 UTC.
+
+Independent review also identified an unresolved counter/maintenance transition
+authority concern in migration 0007. Earlier direct-DML and forged-setting tests
+did not establish that diagnostic context was an unforgeable authority. That
+structural correction and new real-database regressions are separate ongoing work.
+This build-order correction does not resolve that concern or approve an API merge.

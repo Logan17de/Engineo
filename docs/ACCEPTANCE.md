@@ -11,6 +11,21 @@ and add an evidence record under `docs/verification/` with each reviewed increme
 
 ## Reconciled main — 2026-10-03
 
+- Shared Planner views and dense-array guards PR #67 merged at
+  `4d38a05f6c4d03551340e45691d8118df9368b50`, independently approved head
+  `5e2a50460c761e69302b41f817d5d3e69b4f5c27`, tree
+  `c63f892d0736ed329f301fe3a08110364c5d7e88`. Corrected-head CI
+  `37136159592`, CodeQL `37136159563` and Dependency Review `37136159601`
+  passed before the guarded merge. Fresh actual-main CI `37137394084` and
+  CodeQL `37137394112` then passed: all 51 browser / 92 contract / 107 CLI
+  unit / 211 genuine-DB API / 127 script / 59 built HTTP / 15 built TLS tests,
+  and 51 active Rust tests on both compilers. All six checkout SHAs, three
+  artifact digests, empty query reports and all 21 clean Rust sources were
+  independently verified. Current-main screenshots and sanitized records retain
+  the native 1,000-activity ordering, input/result hashes, millisecond times,
+  audit and identity outcomes. The shared modules supply strict inert view
+  configuration and pure presentation projection; saved-view API/GUI/CLI and
+  release acceptance remain separate. See [shared view evidence](verification/2026-10-03-planner-view-shared.md).
 - Configuration material-state and confirmed-summary PR #66 merged at
   `1f18f945c3b598c51965d1bda86e7bde0d495cca`, approved head
   `6159bb3f13ac299ba2ae7149e92bd45e4e7e6d21`, tree
@@ -98,6 +113,31 @@ and add an evidence record under `docs/verification/` with each reviewed increme
   subsequently passed all 26 cases in 49.9s; CodeQL `37105521386` passed with
   empty high/error findings and 19 individually matched clean Rust sources.
   The main-push failure is closed. See [fixture phase evidence](verification/2026-10-03-held-identity-fixture.md).
+
+## Private views API candidate — 2026-10-03
+
+The private named-view API/persistence slice was authored against
+`1f18f945c3b598c51965d1bda86e7bde0d495cca` and is now integrated over verified
+actual main `4d38a05f6c4d03551340e45691d8118df9368b50` / tree
+`c63f892d0736ed329f301fe3a08110364c5d7e88`, which includes the accepted shared
+configuration/projector and array-index guards. See the
+[private API protocol](specs/planner-private-view-api-v1.md) and its precise
+[verification record](verification/2026-10-03-private-planner-view-api.md).
+Private ownership, own-view capability, coherent source projection, independent
+revision/CAS, stateless preview/apply, bounded receipts/storage/rates/maintenance
+and a finite append-only feature audit-admission ceiling are in this API scope.
+GUI controls/keyboard/focus/virtualization, application CLI views commands,
+actual GUI/headless parity, exact-head aggregate CI/security/PM review and physical
+operational capacity remain pending. Fresh clean-runtime integrated local gates pass 115
+contracts / 311 genuine-DB API / 107 existing CLI / 127 scripts / 59 built HTTP /
+15 built TLS / 51 active Rust tests. Source/runtime/engine, original migration
+ledger and database inventory guards match. Initial draft CI failed before the
+HTTP/TLS/audit/browser steps because API runtime emission followed the test phase;
+an explicit dependency/API build before unchanged tests passes the new clean-checkout
+local run. The independent counter/maintenance authority finding remains under
+structural correction. The unchanged 51 browser cases were collected locally, not
+executed against this API candidate. Draft publication and exact-head remote gates
+do not themselves establish saved-view/M1/release acceptance.
 
 ## Historical baseline — 2026-10-02
 

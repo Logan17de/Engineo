@@ -5,6 +5,7 @@ import type { Database } from "./db/client.js";
 import { registerConfigurationRoutes } from "./routes/configuration.js";
 import { registerOrganizationRoutes } from "./routes/organizations.js";
 import { registerProjectRoutes } from "./routes/projects.js";
+import { registerPlannerViewRoutes } from "./routes/views.js";
 import { ProcessScheduleRunner, type ScheduleRunner } from "./scheduler/runner.js";
 import { registerAuthRoutes } from "./security/auth-routes.js";
 import { validateSecurityConfiguration } from "./security/config.js";
@@ -64,7 +65,9 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       registerAuthRoutes(scope, db, limiter);
       registerOrganizationRoutes(scope, db);
       registerConfigurationRoutes(scope, db);
-      registerProjectRoutes(scope, db, options.scheduleRunner ?? new ProcessScheduleRunner());
+      const runner = options.scheduleRunner ?? new ProcessScheduleRunner();
+      registerProjectRoutes(scope, db, runner);
+      registerPlannerViewRoutes(scope, db, runner);
     });
   }
 
