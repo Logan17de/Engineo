@@ -1,0 +1,24 @@
+{
+  "name": "@engineo/cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "engineo": "./dist/main.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node --import tsx --test src/*.test.ts",
+    "test:http": "node --import tsx --test test/http.test.ts",
+    "test:tls": "node --test test/tls.test.mjs"
+  },
+  "dependencies": {
+    "@engineo/contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "24.5.2",
+    "tsx": "4.20.5",
+    "typescript": "5.9.3"
+  }
+}

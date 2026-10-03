@@ -63,6 +63,12 @@ jobs:
       - name: Quality checks
         run: pnpm check:ts
 
+      - name: Built application CLI HTTP acceptance
+        run: ENGINEO_CLI_HTTP_TEST=1 pnpm --filter @engineo/cli test:http
+
+      - name: Built application CLI TLS acceptance
+        run: ENGINEO_CLI_TLS_TEST=1 pnpm --filter @engineo/cli test:tls
+
       - name: Dependency audit
         run: pnpm audit --audit-level high
 
