@@ -1,12 +1,14 @@
 import { randomUUID } from "node:crypto";
+import { writeFile } from "node:fs/promises";
 import type { EngineProjectInputV1, ScheduleCalculationMetadataV1 } from "@engineo/contracts";
-import { type BrowserContext, expect, type Page, test } from "@playwright/test";
+import { type BrowserContext, expect, type Page, type TestInfo } from "@playwright/test";
 import { createDatabase } from "../apps/api/src/db/client.js";
 import { migrateDatabase } from "../apps/api/src/db/migrate.js";
 import { tenantContext } from "../apps/api/src/db/tenant-context.js";
 import { PlannerRepository } from "../apps/api/src/repositories/planner-repository.js";
 import { ProjectRepository } from "../apps/api/src/repositories/project-repository.js";
 import { hashPassword } from "../apps/api/src/security/password.js";
+import { test } from "./fixtures.mjs";
 
 const db = createDatabase();
 const password = "disposable-loopback-calculation-fixture";
@@ -102,6 +104,19 @@ async function calculate(page: Page) {
   await expect(page.locator(".liveStatus")).toContainText("Schedule calculated");
   await expect(page.locator(".ganttBar")).toHaveCount(1);
 }
+async function toolbarGeometry(page: Page) {
+  return page.locator(".toolbarActions > button").evaluateAll((buttons) =>
+    buttons.map((button) => {
+      const { x, y, width, height } = button.getBoundingClientRect();
+      return { x, y, width, height };
+    }),
+  );
+}
+async function capture(page: Page, testInfo: TestInfo, name: string) {
+  const path = testInfo.outputPath(`${name}.png`);
+  await page.screenshot({ path, fullPage: true });
+  await testInfo.attach(name, { path, contentType: "image/png" });
+}
 async function headers(page: Page) {
   const csrf = (await page.context().cookies()).find((cookie) => cookie.name === "engineo_csrf");
   if (!csrf) throw new Error("Missing fixture CSRF cookie");
@@ -141,10 +156,7 @@ test("calculated dates and provenance survive reload and disappear for an unsave
   await expect(page.getByLabel("Saved calculation provenance")).toContainText(
     `revision ${data.revision}`,
   );
-  await testInfo.attach("saved-calculation-provenance", {
-    body: await page.screenshot({ fullPage: true }),
-    contentType: "image/png",
-  });
+  await capture(page, testInfo, "saved-calculation-provenance");
   await page.getByRole("button", { name: "Activities", exact: true }).click();
   await page.getByRole("textbox", { name: "Activity 1 name", exact: true }).fill("Unsaved name");
   await expect(page.locator(".ganttBar")).toHaveCount(0);
@@ -250,6 +262,121 @@ for (const failure of ["network", "truncated JSON", "unclassified 500"] as const
     const initial = await saved(page, data);
     await page.getByRole("button", { name: "Recalculate", exact: true }).dblclick();
     await expect(page.locator(".liveStatus")).toContainText("Schedule calculated");
+    expect((await saved(page, data)).calculation?.calculationId).toBe(
+      initial.calculation?.calculationId,
+    );
+    const audits =
+      await db`SELECT id FROM audit_events WHERE organization_id=${data.organization} AND resource_id=${data.project} AND action='schedule.run'`;
+    expect(audits).toHaveLength(1);
+  });
+}
+
+for (const width of [1440, 780]) {
+  test(`planner action targets stay fixed through save, repeated clicks and explicit cancellation at ${width}px`, async ({
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width, height: 960 });
+    const data = await fixture();
+    await open(page, data);
+    const idle = await toolbarGeometry(page);
+    const action = page.locator(".toolbarActions .primary");
+    const target = await action.boundingBox();
+    if (!target) throw new Error("Missing calculation action target");
+    await expect(page.getByRole("button", { name: "Stop request", exact: true })).toHaveCount(0);
+    await expect(page.locator(".requestStop")).toBeDisabled();
+    await expect(page.locator(".requestStop")).toHaveAttribute("tabindex", "-1");
+    await page
+      .getByRole("textbox", { name: "Activity 1 name", exact: true })
+      .fill("Repeated-click saved edit");
+    await expect(action).toHaveAccessibleName("Save & recalculate");
+    const dirty = await toolbarGeometry(page);
+    expect(dirty).toEqual(idle);
+
+    let writes = 0,
+      runs = 0;
+    page.on("request", (request) => {
+      if (request.method() === "PUT" && request.url().endsWith("/schedule")) writes++;
+      if (request.method() === "POST" && request.url().endsWith("/schedule/run")) runs++;
+    });
+    const pendingRun = barrier();
+    await page.route("**/schedule/run", async (route) => {
+      await pendingRun.promise;
+      await route.continue();
+    });
+    try {
+      await page.getByRole("button", { name: "Save & recalculate", exact: true }).dblclick();
+      await expect.poll(() => runs).toBe(1);
+      await expect(action).toHaveAccessibleName("Recalculate");
+      await expect(page.locator(".revisionBadge")).not.toContainText("Unsaved edits");
+      await expect(action).toBeDisabled();
+      await expect(page.getByRole("button", { name: "Stop request", exact: true })).toBeEnabled();
+      const saving = await toolbarGeometry(page);
+      expect(saving).toEqual(idle);
+      await page.mouse.click(target.x + target.width / 2, target.y + target.height / 2);
+      await expect(page.getByRole("alert", { name: "Error", exact: true })).toHaveCount(0);
+      expect(writes).toBe(1);
+      expect(runs).toBe(1);
+      const geometryPath = testInfo.outputPath("stable-planner-action-geometry.json");
+      await writeFile(
+        geometryPath,
+        JSON.stringify({ viewportWidth: width, idle, dirty, saving }, null, 2),
+      );
+      await testInfo.attach("stable-planner-action-geometry", {
+        path: geometryPath,
+        contentType: "application/json",
+      });
+      await capture(page, testInfo, "repeat-click-busy-toolbar");
+      pendingRun.release();
+      await expect(page.locator(".liveStatus")).toContainText("Schedule calculated");
+    } finally {
+      pendingRun.release();
+      await page.unrouteAll({ behavior: "wait" });
+    }
+    const initial = await saved(page, data);
+    expect(initial.revision).toBe(data.revision + 1);
+    expect(initial.calculation).not.toBeNull();
+    const recalculationIdle = await toolbarGeometry(page);
+    const pendingRead = barrier();
+    let readRequested = false,
+      stopRequested = false;
+    await page.route("**/schedule", async (route) => {
+      expect(route.request().method()).toBe("GET");
+      readRequested = true;
+      await pendingRead.promise;
+      try {
+        await route.continue();
+      } catch (error) {
+        // Explicit Stop detaches the intercepted GET before its barrier is released.
+        if (!stopRequested) throw error;
+      }
+    });
+    try {
+      await page.getByRole("button", { name: "Recalculate", exact: true }).dblclick();
+      await expect.poll(() => readRequested).toBe(true);
+      await expect(action).toBeDisabled();
+      await expect(page.getByRole("button", { name: "Stop request", exact: true })).toBeEnabled();
+      expect(await toolbarGeometry(page)).toEqual(recalculationIdle);
+      await expect(page.getByRole("alert", { name: "Error", exact: true })).toHaveCount(0);
+      expect(writes).toBe(1);
+      expect(runs).toBe(1);
+      stopRequested = true;
+      await page.getByRole("button", { name: "Stop request", exact: true }).click();
+      await expect(page.getByRole("alert", { name: "Error", exact: true })).toContainText(
+        "Request stopped",
+      );
+      await expect(action).toBeEnabled();
+      await expect(page.getByRole("button", { name: "Stop request", exact: true })).toHaveCount(0);
+      await expect(page.locator(".requestStop")).toBeHidden();
+      await expect(page.locator(".requestStop")).toBeDisabled();
+      await expect(page.locator(".requestStop")).toHaveAttribute("tabindex", "-1");
+      await capture(page, testInfo, "intentional-cancel-toolbar");
+    } finally {
+      pendingRead.release();
+      await page.unrouteAll({ behavior: "wait" });
+    }
+    await calculate(page);
+    expect(writes).toBe(1);
+    expect(runs).toBe(2);
     expect((await saved(page, data)).calculation?.calculationId).toBe(
       initial.calculation?.calculationId,
     );
@@ -390,9 +517,7 @@ test("session expiry during startup result reading clears the verified account a
     await expect(page.locator(".projectCard")).toHaveCount(0);
   } finally {
     pending.release();
-    await page.unroute("**/schedule/result");
-    await page.unroute("**/schedule");
-    await page.unroute(detailPath);
+    await page.unrouteAll({ behavior: "wait" });
   }
   await login(page, data.owner);
   await expect(page.locator(".ganttBar")).toHaveCount(1);
@@ -436,8 +561,7 @@ test("a revision changed while reading calculations cannot attach newer dates to
     await expect(page.locator(".ganttBar")).toHaveCount(0);
   } finally {
     pending.release();
-    await page.unroute("**/schedule/result");
-    await page.unroute("**/schedule");
+    await page.unrouteAll({ behavior: "wait" });
   }
   await page.getByRole("button", { name: "Reload saved version", exact: true }).click();
   await expect(page.getByRole("textbox", { name: "Activity 1 name", exact: true })).toHaveValue(
@@ -503,7 +627,10 @@ test("a delayed saved result cannot repopulate an old tab after another account 
     await expect(page.locator(".account")).not.toContainText(data.owner.email);
   } finally {
     pending.release();
-    await page.unroute("**/schedule/result");
-    await other.close();
+    try {
+      await page.unrouteAll({ behavior: "wait" });
+    } finally {
+      await other.close();
+    }
   }
 });

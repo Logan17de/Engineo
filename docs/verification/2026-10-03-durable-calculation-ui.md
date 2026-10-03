@@ -44,9 +44,13 @@ attestation. Input/result integrity hashes are SHA-256.
 | Skips | no contract/API/security skips; one existing manual Rust scale benchmark ignored |
 | JavaScript high-severity audit | passed; no known vulnerabilities reported |
 | Final TypeScript/build/test gate after retry/500-response refinements | passed again: contracts 8, API 76, security/consistency scripts 11, all typing/format/lint and both builds |
+| Combined correction gate after toolbar/fixture source review | passed: contracts 8, API 76, security/consistency/fixture scripts 24, all TypeScript/e2e typing, format/lint, both production builds, Rustfmt/Clippy and 51 active Rust tests; zero contract/API/script skips |
 | Browser-test collection | 39 cases across four files after the independently reviewed fixture correction; collection is not behavioral execution |
+| Corrected browser command/discovery | passed: 41 cases across four files using the dedicated per-run database; no fixture databases remain afterward; collection is not behavioral execution |
 | Local browser runtime | unrun behavior: verified Chromium Unix-socket launch restriction and truncated pinned Playwright downloads remain |
-| Remote exact-head CI/CodeQL/extraction/dependency/browser gates | pending publication; inspect the draft PR |
+| Initial remote CI `37106301443`, head `ca58d83a9370a2b88b5f15304a70102ae1f9a835` | nonbrowser gates passed; browser behavior failed 9 of 39 cases, so the head is not approved |
+| Initial remote CodeQL `37106301496` | both languages passed; Rust 21 clean / zero errors / 21 expected tracked sources, with empty high/error findings |
+| Initial remote Dependency Review `37106301437` | passed against corrected main |
 
 The five pre-existing Biome warnings and configuration deprecation remain;
 generated Next.js declarations are restored and excluded from the increment.
@@ -75,6 +79,56 @@ Pure consistency tests cover reordered JSON keys, changed inputs/results,
 malformed metadata, revision mismatch and the 128-character engine identity rule.
 Source review and test collection are not substitutes for the remote browser run.
 
+## Initial remote acceptance failures
+
+The first published [draft #63](https://github.com/Logan17de/Engineo/pull/63)
+head `ca58d83a` / tree `a44ec92f117f5b7c5d3a7b964ba9481e54e41a61` passed
+the nonbrowser checks but [CI `37106301443`](https://github.com/Logan17de/Engineo/actions/runs/37106301443)
+failed with 30/39 browser cases passing. The exact head remains held from merge.
+The retained browser artifact `11267868004` was independently downloaded; its
+SHA-256 matched `dedea5ff9a3ab63124e24c8e74436ed74bce1688efa4516a8e1a189d751b4c5f`.
+
+- Three lost-response cases recovered the original committed calculation, then
+  failed the real Recalculate double-click. Adding Stop request as a new flex
+  item moved Recalculate underneath the second physical click, cancelling the
+  preflight GET and displaying Request stopped. This is a production UI bug;
+  the correction must stabilize geometry and preserve repeated-click and
+  intentional-cancel behavior rather than remove the assertions.
+- Six later identity scenarios received real login 429 responses. The expanded
+  suite exhausted the unchanged shared loopback 60-attempt/5-minute IP quota.
+  Disposable fixture state must be isolated without raising limits, trusting
+  forged headers, disabling protection, or hiding an unexpected 429.
+
+The review delta corrects both causes:
+
+- Stop request keeps a reserved layout slot when inactive, while remaining
+  hidden, disabled, absent from the accessibility tree and keyboard tab order.
+  Hidden CSS sizing labels stabilize the primary action and Saved/Unsaved badge
+  without adding duplicate DOM text or weakening existing dirty-state assertions.
+- Two additional desktop/wrapped-toolbar cases hold real requests, assert exact
+  idle/dirty/busy button geometry, perform actual double/third clicks, explicitly
+  Stop, retry, and require the same calculation ID with one schedule-run audit.
+  The three original lost-response double-click assertions remain unchanged.
+- The browser command creates one uniquely named loopback fixture database,
+  checks its actual address/name/run marker and resets only login counters before
+  each serial scenario. It never resets the configured source database or adds a
+  production reset endpoint. Signals drain setup/child/disposal; cleanup failures
+  report the specific fixture identity instead of claiming success.
+- Real SQL/Fastify boundary checks preserve the 61st-IP-attempt and ninth-account
+  denial and prove users/projects/sessions/audits and source quota state survive.
+  This is not socket-level browser execution. URL/name/marker/worker guards and
+  interruption/cleanup paths have dedicated regressions.
+- All held calculation route callbacks drain before retry or tab closure.
+  Provenance and toolbar PNGs plus geometry JSON are saved under `test-results`
+  before path-based attachment, so the CI artifact includes passing evidence.
+  Earlier body-only screenshot attachments were reporter memory, not retained
+  files; no passing screenshot from the initial run is claimed.
+
+The corrected suite contains 41 cases. Both corrections require a fresh full
+exact-head browser/security run and renewed independent review. Passed initial
+query/dependency jobs do not clear the failed browser gate or constitute approval
+of subsequent changes.
+
 ## Populated disposable backup/restore drill
 
 The previous missing-client limitation is resolved in this cloud executor.
@@ -90,7 +144,8 @@ descriptive fixture measurements, not production RPO/RTO. The first trial used
 only leftover sparse test data and was not counted as representative acceptance;
 the populated drill above is the relevant evidence. No production data, encrypted
 backup automation, separately scoped backup identity, retention policy or disaster
-recovery SLA was established. Baselines are not yet implemented/tested.
+recovery SLA was established. Relationships were empty in this fixture;
+populated relationship/interchange restoration and baselines remain unverified.
 
 ## Review and remaining scope
 

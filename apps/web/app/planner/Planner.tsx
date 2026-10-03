@@ -110,6 +110,8 @@ export default function Planner() {
     ? constraintActivity
     : (input?.activities[0]?.id ?? "");
   const editable = permissions.write && !busy;
+  const canStopRequest =
+    busy === "Saving and calculating" || busy === "Previewing CSV" || busy === "Applying CSV";
   const projectPath = input ? `/organizations/${organizationId}/projects/${input.project.id}` : "";
   const currentState = useRef({ user, organizationId, snapshot, dirty });
   currentState.current = { user, organizationId, snapshot, dirty };
@@ -929,8 +931,11 @@ export default function Planner() {
               <div className="plannerToolbar">
                 <div className="revisionBadge">
                   Revision {snapshot.revision}
-                  <span className={dirty ? "unsaved" : "saved"}>
-                    {dirty ? "Unsaved edits" : "Saved"}
+                  <span
+                    className={`stableToolbarLabel ${dirty ? "unsaved" : "saved"}`}
+                    data-stable-label="Unsaved edits"
+                  >
+                    <span>{dirty ? "Unsaved edits" : "Saved"}</span>
                   </span>
                   {!permissions.write ? <span>Read only</span> : null}
                 </div>
@@ -998,20 +1003,24 @@ export default function Planner() {
                   {permissions.write ? (
                     <button
                       type="button"
-                      className="primary"
+                      className="primary stableToolbarLabel"
+                      data-stable-label="Save & recalculate"
                       disabled={Boolean(busy) || (!dirty && !permissions.scheduleRun)}
                       onClick={saveAndCalculate}
                     >
-                      {dirty ? "Save & recalculate" : "Recalculate"}
+                      <span>{dirty ? "Save & recalculate" : "Recalculate"}</span>
                     </button>
                   ) : null}
-                  {busy === "Saving and calculating" ||
-                  busy === "Previewing CSV" ||
-                  busy === "Applying CSV" ? (
-                    <button type="button" onClick={() => operation.current?.abort()}>
-                      Stop request
-                    </button>
-                  ) : null}
+                  <button
+                    type="button"
+                    className="requestStop"
+                    disabled={!canStopRequest}
+                    aria-hidden={!canStopRequest}
+                    tabIndex={canStopRequest ? undefined : -1}
+                    onClick={() => operation.current?.abort()}
+                  >
+                    Stop request
+                  </button>
                 </div>
               </div>
               <div className="summaryStrip">

@@ -68,6 +68,16 @@ pnpm test:browser
 Browser acceptance uses the production builds and real PostgreSQL/Rust bridge.
 Run `pnpm build` and `pnpm exec playwright install --with-deps chromium` first,
 and provide a disposable loopback `DATABASE_URL` and `ENGINEO_SCHEDULER_BIN`.
+`pnpm test:browser` creates a uniquely named database on that local PostgreSQL
+server, then drops only that database when acceptance finishes or is interrupted.
+The configured source database is not migrated, cleared or otherwise modified.
+The PostgreSQL role must have permission to create/drop its own fixture database.
+URLs with query overrides or non-loopback hosts are rejected. Each fixture
+database carries a random run marker checked against its actual database name
+and server address before resetting only `auth_rate_limits` between single-worker
+scenarios. Production login quotas remain unchanged and enforced within each
+scenario; API security tests independently cover the real IP/account thresholds.
+Run acceptance through this wrapper rather than directly invoking Playwright.
 Playwright starts its own servers on ports 3100/4000. A system Chromium can be
 selected with `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`. See the
 [browser execution record](verification/2026-10-02-planner-browser.md) for

@@ -19,7 +19,7 @@
     "check:rust": "cargo fmt --all -- --check && cargo clippy --workspace --all-targets --locked -- -D warnings && cargo test --workspace --locked",
     "check": "pnpm run check:ts && pnpm run check:rust",
     "audit:ts": "pnpm audit --audit-level high",
-    "test:browser": "playwright test",
+    "test:browser": "node scripts/run-browser-tests.mjs",
     "typecheck:e2e": "tsc -p tsconfig.e2e.json"
   },
   "devDependencies": {

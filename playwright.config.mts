@@ -1,11 +1,7 @@
 import { defineConfig } from "@playwright/test";
+import { browserDatabaseEnvironment } from "./scripts/browser-test-database.mjs";
 
-const databaseUrl = process.env.DATABASE_URL;
-if (!databaseUrl || !["127.0.0.1", "localhost", "[::1]"].includes(new URL(databaseUrl).hostname)) {
-  throw new Error(
-    "Browser tests require DATABASE_URL for a disposable loopback PostgreSQL database.",
-  );
-}
+const { url: databaseUrl } = browserDatabaseEnvironment(process.env);
 export default defineConfig({
   testDir: "./e2e",
   timeout: 90_000,
