@@ -9,7 +9,8 @@
     "typecheck": "tsc -p tsconfig.json",
     "test": "node --import tsx --test --test-concurrency=1 \"src/**/*.test.ts\"",
     "start": "node dist/server.js",
-    "db:migrate": "tsx src/db/migrate-cli.ts"
+    "db:migrate": "tsx src/db/migrate-cli.ts",
+    "db:configuration-maintenance": "node dist/db/configuration-maintenance-cli.js"
   },
   "dependencies": {
     "@engineo/contracts": "workspace:*",

@@ -11,6 +11,12 @@ export interface ProjectRecord {
   revision: number;
 }
 
+// PostgreSQL timestamptz values may already be Date objects. String(Date)
+// omits milliseconds, so preserve the value before canonical schedule hashing.
+function storedScheduleInstant(value: unknown): string {
+  return (value instanceof Date ? value : new Date(String(value))).toISOString();
+}
+
 interface ProjectRow {
   id: string;
   organization_id: string;
@@ -134,12 +140,10 @@ export async function readPlannerSnapshot(
     project: {
       id: project.id,
       name: project.name,
-      plannedStart: new Date(String(settings.planned_start)).toISOString(),
-      dataDate: new Date(String(settings.data_date)).toISOString(),
+      plannedStart: storedScheduleInstant(settings.planned_start),
+      dataDate: storedScheduleInstant(settings.data_date),
       requiredFinish:
-        settings.required_finish === null
-          ? null
-          : new Date(String(settings.required_finish)).toISOString(),
+        settings.required_finish === null ? null : storedScheduleInstant(settings.required_finish),
       defaultCalendarId: String(settings.default_calendar_id),
     },
     scheduleOptions: {

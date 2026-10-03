@@ -41,3 +41,5 @@ export {
   type ScheduleValidationResult,
   validateScheduleInputV1,
 } from "./validation.js";
+
+export * from "./project-configuration.js";
