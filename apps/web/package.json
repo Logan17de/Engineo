@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "node -e \"console.log('web tests: none yet')\""
+    "start": "next start"
   },
   "dependencies": {
     "@engineo/contracts": "workspace:*",
