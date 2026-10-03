@@ -24,7 +24,73 @@ const messages: Record<string, string> = {
   temporarily_unavailable: "The service is temporarily unavailable. Try again shortly.",
   mfa_required:
     "Your organization requires multi-factor authentication. Contact your administrator.",
+  view_revision_conflict:
+    "This private view changed. Reload its current version before reviewing again.",
+  view_schedule_revision_conflict:
+    "The saved project changed. Reload before reviewing this view again.",
+  view_reference_stale: "The selected WBS is no longer in the saved project. Choose a current WBS.",
+  view_result_required: "This presentation needs a verified current saved calculation.",
+  view_not_found: "This private view is unavailable. Reload your views.",
+  view_capacity_exceeded: "Private-view capacity is full. Try again after capacity is available.",
+  view_rate_limited: "Private-view requests are temporarily limited. Wait before trying again.",
+  view_review_expired: "This preview expired. Review the action again before applying.",
+  view_operation_expired: "The original operation is outside its receipt retention window.",
+  view_idempotency_conflict: "The original operation identity has a different recorded request.",
+  view_integrity_error: "The private-view service could not verify its data.",
+  view_projection_too_large: "The complete view is too large to display safely.",
+  view_response_invalid: "The private-view response could not be verified.",
 };
+
+export interface ApiResponsePolicy {
+  maximumBytes: number;
+  parseJson: (bytes: Uint8Array) => unknown;
+}
+async function privateJson(response: Response, policy: ApiResponsePolicy): Promise<unknown> {
+  const invalid = () =>
+    new ApiError(
+      502,
+      "view_response_invalid",
+      messages.view_response_invalid ?? "Invalid response.",
+    );
+  if (
+    !response.headers
+      .get("cache-control")
+      ?.split(",")
+      .some((part) => part.trim().toLowerCase() === "no-store") ||
+    !/^application\/json(?:\s*;\s*charset=utf-8)?$/i.test(
+      response.headers.get("content-type") ?? "",
+    )
+  )
+    throw invalid();
+  const declared = response.headers.get("content-length");
+  if (declared !== null && (!/^\d+$/.test(declared) || Number(declared) > policy.maximumBytes))
+    throw invalid();
+  if (!response.body) throw invalid();
+  const reader = response.body.getReader();
+  const parts: Uint8Array[] = [];
+  let size = 0;
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > policy.maximumBytes) throw invalid();
+      parts.push(value);
+    }
+    const bytes = new Uint8Array(size);
+    let offset = 0;
+    for (const part of parts) {
+      bytes.set(part, offset);
+      offset += part.byteLength;
+    }
+    return policy.parseJson(bytes);
+  } catch {
+    throw invalid();
+  } finally {
+    await reader.cancel().catch(() => {});
+    reader.releaseLock();
+  }
+}
 
 let binding: { id: string; csrf: string | undefined } | null = null;
 let generation = 0;
@@ -83,6 +149,7 @@ export async function api<T>(
     signal?: AbortSignal | undefined;
     sessionBound?: boolean;
     responseType?: "json" | "text";
+    responsePolicy?: ApiResponsePolicy;
   } = {},
 ): Promise<T> {
   const method = options.method ?? "GET";
@@ -102,6 +169,7 @@ export async function api<T>(
     }
   };
   assertCurrent();
+  options.signal?.throwIfAborted();
   if (expected) headers["X-Engineo-Session"] = expected.id;
   if (options.body !== undefined) headers["Content-Type"] = "application/json";
   if (method !== "GET") {
@@ -119,12 +187,18 @@ export async function api<T>(
   assertCurrent(path === "/auth/logout" && response.status === 204);
   if (
     expected &&
-    response.headers.get("X-Engineo-Session") !== null &&
+    (options.responsePolicy !== undefined || response.headers.get("X-Engineo-Session") !== null) &&
     response.headers.get("X-Engineo-Session") !== expected.id
   )
     throw changedSession();
+  const privateData = options.responsePolicy
+    ? await privateJson(response, options.responsePolicy)
+    : undefined;
+  assertCurrent();
   if (!response.ok) {
-    const body = await response.json().catch(() => ({}));
+    const body = (
+      options.responsePolicy ? privateData : await response.json().catch(() => ({}))
+    ) as { error?: string; issues?: { path: string; message: string }[]; message?: string };
     assertCurrent();
     const code: string = body.error ?? "request_failed";
     const issue = body.issues?.[0];
@@ -132,19 +206,23 @@ export async function api<T>(
       response.status,
       code,
       messages[code] ??
-        (issue
-          ? `${issue.path}: ${issue.message}`
-          : (body.message ?? `Request failed (${response.status}).`)),
+        (options.responsePolicy
+          ? `Private-view request was rejected (${response.status}).`
+          : issue
+            ? `${issue.path}: ${issue.message}`
+            : (body.message ?? `Request failed (${response.status}).`)),
     );
   }
   options.signal?.throwIfAborted();
   if (response.status === 204) return undefined as T;
   const data = (
-    options.responseType === "text"
-      ? new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(
-          await response.arrayBuffer(),
-        )
-      : await response.json()
+    options.responsePolicy
+      ? privateData
+      : options.responseType === "text"
+        ? new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(
+            await response.arrayBuffer(),
+          )
+        : await response.json()
   ) as T;
   assertCurrent();
   options.signal?.throwIfAborted();
