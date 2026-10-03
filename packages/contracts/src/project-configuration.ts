@@ -541,6 +541,12 @@ function validateShape(value: unknown, rule: Rule, path: string, issues: Diagnos
         invalid("Expected a JSON array.");
         return;
       }
+      // Direct callers must not supply inherited normalization hooks or arrays
+      // without ordinary array methods. Parsed JSON always has this prototype.
+      if (Object.getPrototypeOf(value) !== Array.prototype) {
+        invalid("Expected an ordinary JSON array.");
+        return;
+      }
       if (value.length < rule.min || value.length > rule.max)
         invalid(`Expected between ${rule.min} and ${rule.max} array items.`);
       const descriptors = Object.getOwnPropertyDescriptors(value);

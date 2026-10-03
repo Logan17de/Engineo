@@ -50,6 +50,15 @@ async function snapshot(page: Page) {
   expect(response.status()).toBe(200);
   return (await response.json()) as { revision: number; input: EngineProjectInputV1 };
 }
+async function expectSavedSummary(page: Page, projectId: string, revision: number, name: string) {
+  const card = page.locator(`.projectCard[data-project-id="${projectId}"]`);
+  await expect(card).toHaveClass(/selectedProject/);
+  await expect(card.locator("strong")).toHaveText(name);
+  await expect(card.locator("span").last()).toHaveText(`Revision ${revision}`);
+  await expect(page.locator(".revisionBadge")).toContainText(
+    new RegExp(`^Revision ${revision}(?!\\d)`),
+  );
+}
 async function csrf(page: Page) {
   const cookie = (await page.context().cookies()).find((item) => item.name === "engineo_csrf");
   expect(cookie).toBeDefined();
@@ -63,6 +72,32 @@ async function openFixture(page: Page, account = owner, projectId = fixtureProje
 async function recalculate(page: Page, finish: string) {
   await page.getByRole("button", { name: /^(Save & recalculate|Recalculate)$/ }).click();
   await expect(page.locator(".liveStatus")).toContainText(`finish ${finish} UTC`);
+}
+async function summaryFixture(name: string, code: string) {
+  const context = tenantContext(org, owner.id, "browser-summary-fixture");
+  const planner = new PlannerRepository(db);
+  const project = await planner.createProject(context, {
+    name,
+    code,
+    description: "Metadata outside the schedule must survive summary updates.",
+    plannedStart: "2026-10-05T08:00:00Z",
+    timeZone: "UTC",
+  });
+  const state = await new ProjectRepository(db).plannerSnapshot(context, project.projectId);
+  if (!state) throw new Error("Missing project summary fixture");
+  state.input.activities = [
+    {
+      id: randomUUID(),
+      name: `${name} activity`,
+      kind: "TASK",
+      durationMinutes: 480,
+      wbsId: project.rootWbsId,
+      calendarId: project.calendarId,
+      constraints: [],
+    },
+  ];
+  const revision = await planner.replaceSchedule(context, project.projectId, 1, state.input);
+  return { ...project, name, code, revision };
 }
 
 test.beforeAll(async () => {
@@ -317,11 +352,142 @@ test("create/edit/recalculate 1000 activities, calendar controls, keyboard range
   ).toBe(1);
 });
 
+test("GUI saves and authoritative project switching update only confirmed cached card metadata", async ({
+  page,
+}) => {
+  const first = await summaryFixture("GUI summary project", "GUI-KEEP-CODE");
+  const other = await summaryFixture("Other cached project", "OTHER-KEEP-CODE");
+  await openFixture(page, owner, first.projectId);
+  const firstCard = page.locator(`.projectCard[data-project-id="${first.projectId}"]`);
+  const otherCard = page.locator(`.projectCard[data-project-id="${other.projectId}"]`);
+  await expectSavedSummary(page, first.projectId, first.revision, first.name);
+  await expect(otherCard.locator("span").last()).toHaveText(`Revision ${other.revision}`);
+  const otherSummary = await otherCard.textContent();
+  expect(otherSummary).not.toBeNull();
+
+  await page.getByRole("button", { name: "Schedule", exact: true }).click();
+  await page.getByRole("textbox", { name: "Project name", exact: true }).fill("Confirmed GUI name");
+  await expect(
+    page.getByRole("heading", { name: "Confirmed GUI name", exact: true }),
+  ).toBeVisible();
+  await expect(page.locator(".revisionBadge")).toContainText("Unsaved edits");
+  await expectSavedSummary(page, first.projectId, first.revision, first.name);
+  expect((await snapshot(page)).input.project.name).toBe(first.name);
+  await recalculate(page, "05 Oct 2026, 17:00");
+  const saved = await snapshot(page);
+  expect(saved.revision).toBe(first.revision + 1);
+  await expectSavedSummary(page, first.projectId, saved.revision, saved.input.project.name);
+  await expect(firstCard.locator(".projectCode")).toHaveText(first.code);
+  await expect(otherCard).toHaveText(otherSummary ?? "");
+
+  await page.getByRole("button", { name: "Activities", exact: true }).click();
+  await page
+    .getByRole("textbox", { name: "Activity 1 name", exact: true })
+    .fill("Second GUI commit");
+  await expectSavedSummary(page, first.projectId, saved.revision, saved.input.project.name);
+  await recalculate(page, "05 Oct 2026, 17:00");
+  const twiceSaved = await snapshot(page);
+  expect(twiceSaved.revision).toBe(first.revision + 2);
+  await expectSavedSummary(page, first.projectId, twiceSaved.revision, "Confirmed GUI name");
+  await expect(page.locator(".revisionBadge")).not.toContainText("Unsaved edits");
+  await expect(firstCard.locator(".projectCode")).toHaveText(first.code);
+  await expect(otherCard).toHaveText(otherSummary ?? "");
+
+  // This save does not refresh the browser's cached project list. Opening its
+  // authoritative schedule must refresh that card without replacing the others.
+  const otherPath = `/api/organizations/${org}/projects/${other.projectId}`;
+  const read = await page.request.get(`${otherPath}/schedule`);
+  expect(read.status()).toBe(200);
+  const external = (await read.json()) as { revision: number; input: EngineProjectInputV1 };
+  external.input.project.name = "Externally renamed project";
+  const commit = await page.request.put(`${otherPath}/schedule`, {
+    headers: await csrf(page),
+    data: { expectedRevision: external.revision, input: external.input },
+  });
+  expect(commit.status()).toBe(200);
+  const committedRevision = ((await commit.json()) as { revision: number }).revision;
+  expect(committedRevision).toBe(other.revision + 1);
+  await expect(otherCard).toHaveText(otherSummary ?? "");
+  await otherCard.click();
+  await expectSavedSummary(page, other.projectId, committedRevision, external.input.project.name);
+  await expect(otherCard.locator(".projectCode")).toHaveText(other.code);
+  await expect(firstCard.locator("strong")).toHaveText("Confirmed GUI name");
+  await expect(firstCard.locator("span").last()).toHaveText(`Revision ${twiceSaved.revision}`);
+  await expect(firstCard.locator(".projectCode")).toHaveText(first.code);
+  await firstCard.click();
+  await expect(page.getByRole("textbox", { name: "Activity 1 name", exact: true })).toHaveValue(
+    "Second GUI commit",
+  );
+  await expectSavedSummary(page, first.projectId, twiceSaved.revision, "Confirmed GUI name");
+  await expect(otherCard.locator("span").last()).toHaveText(`Revision ${committedRevision}`);
+});
+
+test("an acknowledged save keeps card and editor aligned when follow-up reads fail", async ({
+  page,
+}) => {
+  const project = await summaryFixture("Acknowledged summary project", "ACK-KEEP-CODE");
+  await openFixture(page, owner, project.projectId);
+  await page.getByRole("button", { name: "Schedule", exact: true }).click();
+  await page
+    .getByRole("textbox", { name: "Project name", exact: true })
+    .fill("Acknowledged saved name");
+  let acknowledged = false,
+    writes = 0,
+    runs = 0;
+  page.on("request", (request) => {
+    if (request.method() === "PUT" && request.url().endsWith("/schedule")) writes++;
+    if (request.method() === "POST" && request.url().endsWith("/schedule/run")) runs++;
+  });
+  await page.route("**/schedule", async (route) => {
+    if (route.request().method() === "PUT") {
+      const response = await route.fetch();
+      expect(response.status()).toBe(200);
+      acknowledged = true;
+      await route.fulfill({ response });
+    } else if (acknowledged)
+      await route.fulfill({ status: 503, json: { error: "temporarily_unavailable" } });
+    else await route.continue();
+  });
+  await page.route(`**/organizations/${org}/projects`, (route) =>
+    route.fulfill({ status: 503, json: { error: "temporarily_unavailable" } }),
+  );
+  try {
+    await page.getByRole("button", { name: "Save & recalculate", exact: true }).click();
+    await expect(page.getByRole("alert", { name: "Error", exact: true })).toContainText(
+      "temporarily unavailable",
+    );
+    expect(acknowledged).toBe(true);
+    const saved = await snapshot(page);
+    expect(saved.revision).toBe(project.revision + 1);
+    expect(saved.input.project.name).toBe("Acknowledged saved name");
+    await expectSavedSummary(page, project.projectId, saved.revision, saved.input.project.name);
+    await expect(page.locator(".revisionBadge .saved")).toHaveText("Saved");
+    await expect(
+      page.locator(`.projectCard[data-project-id="${project.projectId}"] .projectCode`),
+    ).toHaveText(project.code);
+    expect(writes).toBe(1);
+    expect(runs).toBe(0);
+  } finally {
+    await page.unroute("**/schedule");
+    await page.unroute(`**/organizations/${org}/projects`);
+  }
+  await recalculate(page, "05 Oct 2026, 17:00");
+  await expectSavedSummary(
+    page,
+    project.projectId,
+    project.revision + 1,
+    "Acknowledged saved name",
+  );
+  expect(writes).toBe(1);
+  expect(runs).toBe(1);
+});
+
 test("offline retry, replay, stale revision and request cancellation preserve explicit saved state", async ({
   page,
 }) => {
   await openFixture(page);
   const initial = await snapshot(page);
+  await expectSavedSummary(page, fixtureProject, initial.revision, initial.input.project.name);
   await page.getByRole("textbox", { name: "Activity 1 name", exact: true }).fill("Offline edit");
   await page.context().setOffline(true);
   await page.getByRole("button", { name: "Save & recalculate", exact: true }).click();
@@ -331,6 +497,7 @@ test("offline retry, replay, stale revision and request cancellation preserve ex
   );
   await page.context().setOffline(false);
   expect((await snapshot(page)).revision).toBe(initial.revision);
+  await expectSavedSummary(page, fixtureProject, initial.revision, initial.input.project.name);
   let writes = 0;
   page.on("request", (request) => {
     if (request.method() === "PUT" && request.url().endsWith("/schedule")) writes++;
@@ -340,6 +507,7 @@ test("offline retry, replay, stale revision and request cancellation preserve ex
   expect(writes).toBe(1);
   let state = await snapshot(page);
   expect(state.revision).toBe(initial.revision + 1);
+  await expectSavedSummary(page, fixtureProject, state.revision, state.input.project.name);
   await page
     .getByRole("textbox", { name: "Activity 1 name", exact: true })
     .fill("Cancelled after save");
@@ -359,6 +527,8 @@ test("offline retry, replay, stale revision and request cancellation preserve ex
   );
   state = await snapshot(page);
   expect(state.input.activities[0]?.name).toBe("Cancelled after save");
+  await expectSavedSummary(page, fixtureProject, state.revision, state.input.project.name);
+  await expect(page.locator(".revisionBadge")).not.toContainText("Unsaved edits");
   cancellationGate.release();
   await page.unroute("**/schedule/run");
   await recalculate(page, "05 Oct 2026, 17:00");
@@ -377,17 +547,20 @@ test("offline retry, replay, stale revision and request cancellation preserve ex
   await expect(page.getByRole("textbox", { name: "Activity 1 name", exact: true })).toHaveValue(
     "Stale draft",
   );
+  await expectSavedSummary(page, fixtureProject, state.revision, state.input.project.name);
   page.once("dialog", (dialog) => dialog.dismiss());
   await page.getByRole("button", { name: "Reload saved version", exact: true }).click();
   await expect(page.getByRole("textbox", { name: "Activity 1 name", exact: true })).toHaveValue(
     "Stale draft",
   );
+  await expectSavedSummary(page, fixtureProject, state.revision, state.input.project.name);
   page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "Reload saved version", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Changed elsewhere", exact: true })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Activity 1 name", exact: true })).toHaveValue(
     "Cancelled after save",
   );
+  await expectSavedSummary(page, fixtureProject, state.revision + 1, changed.project.name);
   const delayedSave = gate();
   let committed = false;
   const beforeCancel = await snapshot(page);
@@ -412,17 +585,41 @@ test("offline retry, replay, stale revision and request cancellation preserve ex
     "Request stopped",
   );
   await expect(page.locator(".revisionBadge")).toContainText("Unsaved edits");
+  await expectSavedSummary(
+    page,
+    fixtureProject,
+    beforeCancel.revision,
+    beforeCancel.input.project.name,
+  );
   delayedSave.release();
   await page.unroute("**/schedule");
   expect((await snapshot(page)).revision).toBe(beforeCancel.revision + 1);
+  await expectSavedSummary(
+    page,
+    fixtureProject,
+    beforeCancel.revision,
+    beforeCancel.input.project.name,
+  );
   await page.getByRole("button", { name: "Save & recalculate", exact: true }).click();
   await expect(page.getByRole("alert", { name: "Error", exact: true })).toContainText(
     "changed elsewhere",
+  );
+  await expectSavedSummary(
+    page,
+    fixtureProject,
+    beforeCancel.revision,
+    beforeCancel.input.project.name,
   );
   page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "Reload saved version", exact: true }).click();
   await expect(page.getByRole("textbox", { name: "Activity 1 name", exact: true })).toHaveValue(
     "Committed before response",
+  );
+  await expectSavedSummary(
+    page,
+    fixtureProject,
+    beforeCancel.revision + 1,
+    beforeCancel.input.project.name,
   );
   await page.route(`**/organizations/${secondaryOrg}/projects`, (route) =>
     route.fulfill({ status: 503, json: { error: "temporarily_unavailable" } }),

@@ -24,6 +24,15 @@ const state = async () => {
   if (!result) throw new Error("Missing CSV fixture");
   return result;
 };
+async function expectSavedSummary(page: Page, revision: number, name = "CSV round trip") {
+  const card = page.locator(`.projectCard[data-project-id="${projectId}"]`);
+  await expect(card).toHaveClass(/selectedProject/);
+  await expect(card.locator("strong")).toHaveText(name);
+  await expect(card.locator("span").last()).toHaveText(`Revision ${revision}`);
+  await expect(page.locator(".revisionBadge")).toContainText(
+    new RegExp(`^Revision ${revision}(?!\\d)`),
+  );
+}
 const importPath = () => `/api/organizations/${org}/projects/${projectId}/activities/import`;
 const selectFile = (page: Page, csv: string) =>
   page
@@ -81,6 +90,7 @@ test("CSV download, no-op round trip, keyboard preview/apply and real recalculat
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   const before = await state();
+  await expectSavedSummary(page, before.revision, before.input.project.name);
   const downloaded = page.waitForEvent("download");
   await page.getByRole("button", { name: "Export activities CSV", exact: true }).click();
   const file = await downloaded,
@@ -103,6 +113,7 @@ test("CSV download, no-op round trip, keyboard preview/apply and real recalculat
   await expect(region).toBeFocused();
   await expect(region).toContainText("1 changed · 1 unchanged");
   expect(await state()).toEqual(before);
+  await expectSavedSummary(page, before.revision, before.input.project.name);
   await page.screenshot({ path: "/tmp/engineo-csv-preview.png", fullPage: true });
   const apply = page.getByRole("button", { name: "Apply CSV changes", exact: true });
   await apply.focus();
@@ -114,8 +125,11 @@ test("CSV download, no-op round trip, keyboard preview/apply and real recalculat
     "Imported construction",
   );
   expect((await state()).input.activities[1]).toEqual(before.input.activities[1]);
+  await expectSavedSummary(page, before.revision + 1, before.input.project.name);
+  await expect(page.locator(".revisionBadge")).not.toContainText("Unsaved edits");
   await page.getByRole("button", { name: "Recalculate", exact: true }).click();
   await expect(page.locator(".liveStatus")).toContainText("Schedule calculated");
+  await expectSavedSummary(page, before.revision + 1, before.input.project.name);
   expect(errors).toEqual([]);
 });
 
@@ -142,6 +156,7 @@ test("invalid CSV, cancellation, unsaved edits and offline preview do not change
   await page.getByRole("button", { name: "Cancel CSV import", exact: true }).click();
   await expect(page.getByRole("button", { name: "Apply CSV changes", exact: true })).toHaveCount(0);
   expect(await state()).toEqual(before);
+  await expectSavedSummary(page, before.revision, before.input.project.name);
   await page.getByRole("button", { name: "Activities", exact: true }).click();
   await page.getByRole("textbox", { name: "Activity 1 name", exact: true }).fill("Unsaved draft");
   await page.getByRole("button", { name: "Import CSV", exact: true }).click();
@@ -150,6 +165,7 @@ test("invalid CSV, cancellation, unsaved edits and offline preview do not change
     page.getByRole("button", { name: "Preview CSV changes", exact: true }),
   ).toBeDisabled();
   expect(await state()).toEqual(before);
+  await expectSavedSummary(page, before.revision, before.input.project.name);
 });
 
 test("stale preview is rejected and reload clears it without overwriting a concurrent save", async ({
@@ -160,6 +176,7 @@ test("stale preview is rejected and reload clears it without overwriting a concu
   await page.getByRole("button", { name: "Preview CSV changes", exact: true }).click();
   await expect(page.getByRole("button", { name: "Apply CSV changes", exact: true })).toBeEnabled();
   const concurrent = await state();
+  await expectSavedSummary(page, concurrent.revision, concurrent.input.project.name);
   concurrent.input.project.name = "Concurrent project edit";
   await planner.replaceSchedule(context, projectId, concurrent.revision, concurrent.input);
   await page.getByRole("button", { name: "Apply CSV changes", exact: true }).click();
@@ -167,10 +184,12 @@ test("stale preview is rejected and reload clears it without overwriting a concu
     "changed elsewhere",
   );
   expect((await state()).input).toEqual(concurrent.input);
+  await expectSavedSummary(page, concurrent.revision);
   await page.getByRole("button", { name: "Reload saved version", exact: true }).click();
   await expect(page.getByRole("textbox", { name: "Activity 1 name", exact: true })).toHaveValue(
     "CSV activity 1",
   );
+  await expectSavedSummary(page, concurrent.revision + 1, concurrent.input.project.name);
   await page.getByRole("button", { name: "Import CSV", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "Preview CSV changes", exact: true }),
@@ -180,6 +199,7 @@ test("stale preview is rejected and reload clears it without overwriting a concu
 test("ambiguous applied response retries conflict safely and reload shows the committed import", async ({
   page,
 }) => {
+  const before = await state();
   await page.getByRole("button", { name: "Import CSV", exact: true }).click();
   await selectFile(page, await changedCsv());
   await page.getByRole("button", { name: "Preview CSV changes", exact: true }).click();
@@ -191,16 +211,20 @@ test("ambiguous applied response retries conflict safely and reload shows the co
   });
   await page.getByRole("button", { name: "Apply CSV changes", exact: true }).click();
   await expect(page.getByRole("alert", { name: "Error", exact: true })).toBeVisible();
+  expect((await state()).revision).toBe(before.revision + 1);
+  await expectSavedSummary(page, before.revision, before.input.project.name);
   await page.unroute(`${importPath()}/apply`);
   await page.getByRole("button", { name: "Apply CSV changes", exact: true }).click();
   await expect(page.getByRole("alert", { name: "Error", exact: true })).toContainText(
     "changed elsewhere",
   );
+  await expectSavedSummary(page, before.revision, before.input.project.name);
   await page.getByRole("button", { name: "Reload saved version", exact: true }).click();
   await expect(page.getByRole("textbox", { name: "Activity 1 name", exact: true })).toHaveValue(
     "Imported construction",
   );
   expect((await state()).revision).toBe(3);
+  await expectSavedSummary(page, before.revision + 1, before.input.project.name);
   const audits =
     await db`SELECT id FROM audit_events WHERE resource_id = ${projectId} AND action = 'project.activities.import'`;
   expect(audits).toHaveLength(1);
@@ -220,6 +244,7 @@ test("1,000 activity changes have bounded review pages and one atomic apply", as
   await expect(page.getByRole("textbox", { name: "Activity 1 name", exact: true })).toHaveValue(
     "Bulk CSV 1",
   );
+  await expectSavedSummary(page, initial.revision + 1, initial.input.project.name);
   for (const activity of initial.input.activities) activity.durationMinutes = 960;
   await page.getByRole("button", { name: "Import CSV", exact: true }).click();
   await selectFile(page, exportActivityCsv(initial.input));
@@ -238,6 +263,7 @@ test("1,000 activity changes have bounded review pages and one atomic apply", as
   );
   const after = await state();
   expect(after.input).toEqual(initial.input);
+  await expectSavedSummary(page, after.revision, after.input.project.name);
   console.log(
     `CSV 1000-activity browser preview, pagination and apply: ${(performance.now() - started).toFixed(1)} ms`,
   );
