@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 import {
+  ACTIVITY_CSV_FORMAT,
+  ACTIVITY_CSV_MAX_BYTES,
   type ActivityKindV1,
   type CalendarV1,
   type EngineProjectInputV1,
@@ -12,6 +14,12 @@ import {
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { Database } from "../db/client.js";
 import { tenantContext } from "../db/tenant-context.js";
+import {
+  ActivityCsvError,
+  csvHash,
+  exportActivityCsv,
+  previewActivityCsv,
+} from "../interchange/activity-csv.js";
 import {
   type CreateActivityInput,
   type CreateCalendarInput,
@@ -157,6 +165,10 @@ function validInstant(value: string): boolean {
 }
 
 function sendMutationError(reply: FastifyReply, error: unknown): void {
+  if (error instanceof ActivityCsvError) {
+    void reply.code(422).send({ error: "invalid_csv", message: error.message });
+    return;
+  }
   if (error instanceof RevisionConflictError) {
     void reply.code(409).send({
       error: "revision_conflict",
@@ -192,6 +204,106 @@ export function registerProjectRoutes(
 ): void {
   const projects = new ProjectRepository(db);
   const planner = new PlannerRepository(db);
+
+  app.get<{ Params: ProjectParams }>(
+    "/organizations/:organizationId/projects/:projectId/activities/export",
+    { schema: { params: schemas.projectParams } },
+    async (request, reply) => {
+      const { organizationId, projectId } = request.params;
+      const principal = await projectPrincipal(
+        db,
+        request,
+        reply,
+        organizationId,
+        projectId,
+        "project.read",
+      );
+      if (!principal) return;
+      const snapshot = await projects.plannerSnapshot(
+        tenantContext(organizationId, principal.userId, request.id),
+        projectId,
+      );
+      if (!snapshot) return reply.code(404).send({ error: "project_not_found" });
+      const csv = exportActivityCsv(snapshot.input);
+      await appendAuditEvent(db, {
+        organizationId,
+        actorType: "user",
+        actorId: principal.userId,
+        action: "project.export",
+        resourceType: "project",
+        resourceId: projectId,
+        source: "api",
+        correlationId: request.id,
+        payload: {
+          revision: snapshot.revision,
+          format: ACTIVITY_CSV_FORMAT,
+          inputHash: csvHash(csv),
+        },
+      });
+      return reply
+        .header("Cache-Control", "no-store")
+        .header("Content-Disposition", `attachment; filename="engineo-${projectId}-activities.csv"`)
+        .type("text/csv; charset=utf-8")
+        .send(csv);
+    },
+  );
+
+  for (const mode of ["preview", "apply"] as const) {
+    app.post<{ Params: ProjectParams; Body: RevisionBody & { csv: string; previewHash?: string } }>(
+      `/organizations/:organizationId/projects/:projectId/activities/import/${mode}`,
+      {
+        // JSON escaping can expand a bounded UTF-8 file up to six times.
+        bodyLimit: ACTIVITY_CSV_MAX_BYTES * 6 + 4096,
+        schema: {
+          params: schemas.projectParams,
+          body: schemas.object({
+            expectedRevision: schemas.expectedRevision,
+            csv: { type: "string", maxLength: ACTIVITY_CSV_MAX_BYTES },
+            ...(mode === "apply"
+              ? { previewHash: { type: "string", pattern: "^[a-f0-9]{64}$" } }
+              : {}),
+          }),
+        },
+      },
+      async (request, reply) => {
+        const { organizationId, projectId } = request.params;
+        const principal = await mutationPrincipal(db, request, reply, organizationId, projectId);
+        if (!principal) return;
+        const context = tenantContext(organizationId, principal.userId, request.id);
+        try {
+          const snapshot = await projects.plannerSnapshot(context, projectId);
+          if (!snapshot) return reply.code(404).send({ error: "project_not_found" });
+          if (snapshot.revision !== request.body.expectedRevision)
+            throw new RevisionConflictError();
+          const { preview } = previewActivityCsv(
+            request.body.csv,
+            snapshot.input,
+            snapshot.revision,
+            organizationId,
+          );
+          if (mode === "preview") return reply.header("Cache-Control", "no-store").send(preview);
+          if (request.body.previewHash !== preview.previewHash)
+            return reply.code(409).send({
+              error: "csv_preview_changed",
+              message: "File or project changed. Preview the import again before applying.",
+            });
+          if (preview.changedCount === 0)
+            return reply.send({ revision: snapshot.revision, changedCount: 0 });
+          const revision = await planner.importActivities(
+            context,
+            projectId,
+            snapshot.revision,
+            preview.changes,
+            preview.sourceHash,
+            preview.rowCount,
+          );
+          return reply.send({ revision, changedCount: preview.changedCount });
+        } catch (error) {
+          sendMutationError(reply, error);
+        }
+      },
+    );
+  }
 
   app.get<{ Params: OrganizationParams }>(
     "/organizations/:organizationId/projects",

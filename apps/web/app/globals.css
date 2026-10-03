@@ -700,3 +700,38 @@ footer {
     padding: 8px;
   }
 }
+.csvPanel {
+  padding: 1.25rem;
+  max-width: 100%;
+}
+.csvPanel p {
+  max-width: 80ch;
+  line-height: 1.6;
+}
+.csvPanel input[type="file"] {
+  display: block;
+  margin: 0.5rem 0;
+  max-width: 100%;
+}
+.csvChanges {
+  overflow: auto;
+  max-height: 28rem;
+  margin: 1rem 0;
+}
+.csvChanges table {
+  border-collapse: collapse;
+  width: 100%;
+}
+.csvChanges th,
+.csvChanges td {
+  padding: 0.65rem;
+  text-align: left;
+  border-bottom: 1px solid #d9e0e3;
+  overflow-wrap: anywhere;
+  max-width: 24rem;
+  white-space: pre-wrap;
+}
+.csvChanges small {
+  display: block;
+  font-size: 0.7rem;
+}
