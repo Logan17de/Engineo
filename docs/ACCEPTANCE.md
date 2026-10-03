@@ -11,6 +11,22 @@ and add an evidence record under `docs/verification/` with each reviewed increme
 
 ## Reconciled main — 2026-10-03
 
+- Configuration material-state and confirmed-summary PR #66 merged at
+  `1f18f945c3b598c51965d1bda86e7bde0d495cca`, approved head
+  `6159bb3f13ac299ba2ae7149e92bd45e4e7e6d21`, tree
+  `609307de35a0a4b4e81f48f44422d2cccbba3a9b`. Exact-head CI
+  `37127845441`, CodeQL `37127845429` and Dependency Review `37127845419`
+  passed before merge. Fresh actual-main CI `37128598692` and CodeQL
+  `37128598684` then passed: 51 browser / 44 contract / 107 CLI unit / 211
+  genuine-DB API / 127 script / 59 built HTTP / 15 built TLS tests, and 51
+  active Rust tests on both compilers. All six actual-main checkout SHAs, three
+  artifact digests, empty query reports and all 21 clean Rust extractions were
+  verified. A fresh independent real Rust invocation reproduced the retained
+  1,000-activity input/result hashes, native order, exact millisecond times and
+  audited outcomes. Three representative current-main screenshots show matching
+  card/editor revisions and stable wrapped toolbar slots. The separate direct
+  helper's numeric-looking extra-array-key finding is addressed in the next
+  shared-contract slice; HTTP JSON is unaffected.
 - Configuration API PR #64 merged at
   `a9d67cdfb24c4fe4848f109b699de63296127ae8`, reviewed tree
   `c9e637ee9cbc83f639e9e6b4d658c331d1e282b9`. Fresh actual-main CI
@@ -164,12 +180,21 @@ merge only after that review. Continue independent implementation while waiting.
 
 ## Current review stack
 
-- `fix/production-invariant-summary` is a separate follow-up from reviewed
-  actual main `e83e3996`: immutable forward migration `0006`, direct-array
-  prototype validation, exact BIGINT native append-order/rollback regressions,
-  and confirmed project-card/editor metadata synchronization. Original branches
-  remain preserved. Fresh combined checks and exact-head remote browser/security
-  review are required before its scoped acceptance.
+- `fix/configuration-array-index-guard` combines a strict non-index-array-key
+  correction with the separately owned shared private-view configuration and
+  pure presentation layer from actual main `1f18f945`. Local combined gates pass
+  90 contracts / 107 CLI / 211 API / 127 scripts / 59 HTTP / 15 TLS and 51
+  active Rust tests, with 51 browser cases collected only. Fresh exact-head remote
+  browser/security gates and independent PM review remain required. This layer
+  implements no saved-view API, GUI, CLI command, permission or persistence.
+  See [shared-layer evidence](verification/2026-10-03-planner-view-shared.md).
+- The separate private-view API/persistence slice is in development against the
+  shared contracts. Its live authorization, coherent source verification,
+  bounded operation receipts/quotas and maintenance require their own actual
+  tests before any acceptance. GUI and built CLI parity remain separate work.
+- `fix/production-invariant-summary` remains preserved after reviewed #66 and
+  green actual-main checks above. Its immutable `0006`, prototype/BIGINT checks
+  and confirmed card synchronization are scoped accepted increments.
 - `feat/headless-project-configuration` and `feat/headless-application-cli` are
   preserved after independently reviewed merges #64 and #65. Their original
   verification sections describe historical local candidates; successful fresh
