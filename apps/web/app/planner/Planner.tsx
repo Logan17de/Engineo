@@ -70,6 +70,8 @@ export default function Planner() {
   const lock = useRef(false);
   const operation = useRef<AbortController | null>(null);
   const initialization = useRef<AbortController | null>(null);
+  const verification = useRef<AbortController | null>(null);
+  const verifySession = useRef<() => void>(() => {});
   const recovery = useRef<Recovery | null>(null);
   const operationDraft = useRef<Recovery | null>(null);
   const [hasRecovery, setHasRecovery] = useState(false);
@@ -131,11 +133,14 @@ export default function Planner() {
       }
       recoveryCookie.current = sessionCookieFingerprint();
       initialization.current?.abort();
+      verification.current?.abort();
+      verification.current = null;
       operation.current?.abort();
       operation.current = null;
       operationDraft.current = null;
       lock.current = false;
       clearSessionBinding();
+      currentState.current = { user: null, organizationId: "", snapshot: null, dirty: false };
       setUser(null);
       clearWorkspace();
       setBusy("");
@@ -200,16 +205,19 @@ export default function Planner() {
         const project = draft?.snapshot.input.project.id ?? query.get("project");
         if (project) {
           const current = await openProject(selected, project, signal);
-          if (draft && selected === draft.organizationId && current.permissions.write) {
-            setSnapshot(draft.snapshot);
-            setDirty(true);
-            setCalendarId(draft.snapshot.input.project.defaultCalendarId);
-            setConstraintActivity(draft.snapshot.input.activities[0]?.id ?? "");
-            setNotice(
-              current.loaded.revision === draft.snapshot.revision
-                ? "Your unsaved edits have been restored. Review them before saving."
-                : "Your edits have been restored, but the saved version changed. Copy your edits before reloading.",
-            );
+          if (draft && selected === draft.organizationId) {
+            if (current.permissions.write) {
+              setSnapshot(draft.snapshot);
+              setDirty(true);
+              setCalendarId(draft.snapshot.input.project.defaultCalendarId);
+              setConstraintActivity(draft.snapshot.input.activities[0]?.id ?? "");
+              setNotice(
+                current.loaded.revision === draft.snapshot.revision
+                  ? "Your unsaved edits have been restored. Review them before saving."
+                  : "Your edits have been restored, but the saved version changed. Copy your edits before reloading.",
+              );
+            } else
+              setNotice("Your edits could not be restored because your project access changed.");
             recovery.current = null;
             setHasRecovery(false);
           }
@@ -237,49 +245,65 @@ export default function Planner() {
     };
   }, [initialize, invalidateAccount]);
   useEffect(() => {
-    let checking = false;
     let disposed = false;
     const verify = async () => {
       const account = currentState.current.user;
       const pendingRecovery = recovery.current;
       if (
-        checking ||
+        verification.current ||
+        operation.current ||
         (!account && !pendingRecovery) ||
-        (!account && operation.current) ||
         document.visibilityState !== "visible"
       )
         return;
-      checking = true;
+      const controller = new AbortController();
+      verification.current = controller;
+      const deadline = window.setTimeout(() => controller.abort(), 5000);
       const started = sessionGeneration();
       const expected = currentSessionId();
       try {
         const me = await api<{ user: User; session: { id: string } }>("/auth/me", {
           sessionBound: false,
+          signal: controller.signal,
         });
         if (!disposed && sessionGeneration() === started) {
-          if (
-            (account && me.session.id !== expected) ||
-            (pendingRecovery && me.user.id !== pendingRecovery.userId)
-          )
+          if (account && me.session.id !== expected)
+            invalidateAccount(true, "Your sign-in changed in another tab. Sign in again.");
+          const draft = recovery.current;
+          if (draft && me.user.id !== draft.userId)
             invalidateAccount(false, "Your sign-in changed in another tab. Sign in again.");
           else recoveryCookie.current = sessionCookieFingerprint();
         }
       } catch (error) {
-        if (disposed || sessionGeneration() !== started) return;
+        if (disposed || sessionGeneration() !== started || verification.current !== controller)
+          return;
         if (error instanceof ApiError && error.status === 401)
           invalidateAccount(true, "Your session has ended. Sign in again.");
-        else if (error instanceof ApiError && error.code === "session_changed")
-          invalidateAccount(false, error.message);
+        else if (error instanceof ApiError && error.code === "session_changed") {
+          invalidateAccount(true, error.message);
+          queueMicrotask(() => verifySession.current());
+        } else if (!currentState.current.user)
+          setError("Sign-in verification did not finish. Sign in again to continue.");
       } finally {
-        checking = false;
+        window.clearTimeout(deadline);
+        if (verification.current === controller) verification.current = null;
       }
     };
+    const checkCookie = () => {
+      if (currentState.current.user && sessionCookieChanged())
+        invalidateAccount(true, "Your sign-in changed in another tab. Sign in again.");
+    };
     const focused = () => {
+      // A known changed binding clears visible data before any network probe.
+      checkCookie();
       void verify();
     };
-    const unsubscribe = subscribeSessionChanges(() =>
-      invalidateAccount(false, "Your sign-in changed in another tab. Sign in again."),
-    );
+    const runVerification = () => void verify();
+    verifySession.current = runVerification;
+    const unsubscribe = subscribeSessionChanges((change) => {
+      invalidateAccount(change === "login", "Your sign-in changed in another tab. Sign in again.");
+      if (change === "login") void verify();
+    });
     window.addEventListener("focus", focused);
     document.addEventListener("visibilitychange", focused);
     // Cookie comparison is local; it does not poll the database every second.
@@ -288,10 +312,13 @@ export default function Planner() {
         (currentState.current.user && sessionCookieChanged()) ||
         (recovery.current && recoveryCookie.current !== sessionCookieFingerprint())
       )
-        void verify();
+        focused();
     }, 1000);
     return () => {
       disposed = true;
+      verification.current?.abort();
+      verification.current = null;
+      if (verifySession.current === runVerification) verifySession.current = () => {};
       unsubscribe();
       window.removeEventListener("focus", focused);
       document.removeEventListener("visibilitychange", focused);
@@ -318,6 +345,8 @@ export default function Planner() {
     if (lock.current) return;
     initialization.current?.abort();
     initialization.current = null;
+    verification.current?.abort();
+    verification.current = null;
     setReady(true);
     lock.current = true;
     operationDraft.current =
@@ -334,7 +363,8 @@ export default function Planner() {
     } catch (error) {
       if (operation.current !== controller) return;
       if (error instanceof ApiError && error.code === "session_changed") {
-        invalidateAccount(false, error.message);
+        invalidateAccount(recoverDraft, error.message);
+        verifySession.current();
         return;
       }
       if (error instanceof ApiError && error.status === 401) {
@@ -451,7 +481,7 @@ export default function Planner() {
                         }
                         setUser(null);
                         clearSessionBinding();
-                        announceSessionChange();
+                        announceSessionChange("logout");
                         window.history.replaceState(null, "", "/");
                       },
                       false,
@@ -514,7 +544,7 @@ export default function Planner() {
                   },
                   signal,
                 });
-                announceSessionChange();
+                announceSessionChange("login");
                 await initialize(signal);
               });
             }}

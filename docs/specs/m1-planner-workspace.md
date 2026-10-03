@@ -46,14 +46,21 @@ Non-Planner API consumers may omit the intent header; their authority is still
 their authenticated principal, never a client-provided identity.
 
 The tab also retains its CSRF-cookie fingerprint and an in-memory generation.
-Requests and decoded responses must still match them. Login/logout notifications
-invalidate other tabs; focus/visibility checks and local cookie comparison cover
-browsers without BroadcastChannel. These checks cancel obsolete operations and
-clear old account/project state. A pending recovery verifies the actual account
-when a new shared cookie appears; another account cannot retain its draft.
-Notifications contain no credentials and no project data is stored in browser
-storage. Explicit accepted logout clears the draft before awaiting revocation;
-an already-expired session counts as signed out and cannot resurrect that draft.
+Requests and decoded responses must still match them. A changed binding clears
+the old visible account/project/permissions before any network probe. Cookie
+comparison and focus/visibility checks cover browsers without BroadcastChannel.
+The probe has a five-second abort deadline and cannot repopulate the workspace.
+Failures leave a usable sign-in form with any draft held only in volatile escrow,
+scoped to its original immutable user, organization, project and revision.
+
+Login and deliberate logout notifications have separate intent. Same-account
+reauthentication preserves escrow; verified different accounts and deliberate
+logout discard it. Restoring escrow requires the ordinary fresh identity,
+organization, project and write-permission checks, and keeps its original
+revision. Loss of write access discards escrow and loads the saved read-only
+version. Notifications contain no credentials and no project data is stored in
+browser storage. Explicit accepted logout clears the draft before awaiting
+revocation; an already-expired session cannot resurrect it.
 
 ## Accessibility and export
 

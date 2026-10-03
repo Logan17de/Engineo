@@ -50,18 +50,24 @@ export const currentSessionId = () => binding?.id;
 export function sessionCookieChanged(): boolean {
   return binding !== null && binding.csrf !== csrfCookie();
 }
-export function announceSessionChange(): void {
+type SessionChange = "login" | "logout";
+export function announceSessionChange(change: SessionChange): void {
   if (typeof BroadcastChannel !== "undefined") {
     const channel = new BroadcastChannel(authChannel);
-    channel.postMessage({ source: tabId, type: "session-change" });
+    channel.postMessage({ source: tabId, type: "session-change", change });
     channel.close();
   }
 }
-export function subscribeSessionChanges(changed: () => void): () => void {
+export function subscribeSessionChanges(changed: (change: SessionChange) => void): () => void {
   if (typeof BroadcastChannel === "undefined") return () => {};
   const channel = new BroadcastChannel(authChannel);
   channel.onmessage = (event) => {
-    if (event.data?.type === "session-change" && event.data.source !== tabId) changed();
+    if (
+      event.data?.type === "session-change" &&
+      event.data.source !== tabId &&
+      (event.data.change === "login" || event.data.change === "logout")
+    )
+      changed(event.data.change);
   };
   return () => channel.close();
 }

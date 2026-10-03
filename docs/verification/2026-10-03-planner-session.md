@@ -102,3 +102,38 @@ Dependency Review `37021742359` failed because Dependency Graph is disabled.
 The owner's permission is unanswered; no setting or merge is changed. Production
 proxy/ingress quotas/timeouts, durable results, remaining M1 workflows, later
 roadmap capabilities and operational gates remain pending in `ACCEPTANCE.md`.
+
+## Independent review follow-up
+
+The first correction was published as `0f18291829aa28ca1d276044243d92b75bb77f65`.
+Its CI `37083434654` passed all 11 browser cases, Rust checks and both audits.
+CodeQL `37083434608` passed the query gates but still had 17 clean / 2 erroneous
+Rust files. Dependency Review `37083434645` failed on the disabled graph.
+
+Independent review found two further P2 behaviors and requested changes:
+login broadcasts discarded a same-account expiry draft, and a failed or hung
+fallback identity probe could leave old data visible. Both are corrected in a
+separate follow-up commit on this PR. A definite changed cookie now clears
+visible state and cancels old operations immediately. A bounded five-second
+probe only decides whether original-account escrow may remain; failures cannot
+repopulate a workspace or block later deliberate sign-in. Login notifications
+preserve scoped escrow until identity verification; explicit logout carries
+discard intent. Fresh initialization consumes it only with current write
+permission, and retains the original revision for conflict checking.
+
+Five additional production-browser cases exercise same-account reauthentication
+with retained or removed write permission and unavailable/offline/held identity
+verification without BroadcastChannel. All five passed in 16.2 seconds. The
+held case verifies an actual B response, leaves it undelivered past the probe's
+deadline, then delivers it after deliberate A reauthentication; it cannot
+restore B or overwrite A's recovered workspace. Identity and RBAC use real
+cookies/PostgreSQL; the 503/offline failures are deliberate fault injection.
+
+An initial targeted run passed the two reauthentication cases and failed three
+test selectors because Next also has a route-announcer alert. Selecting the
+labelled Engineo error alert fixes the ambiguity; the targeted 5/5 rerun passed.
+The final full `check:ts` gate passed again (7 contracts, 36 API, 2 SARIF
+regressions and both builds). All 16 production-browser cases passed in 45.8
+seconds, zero retries/skips/unhandled page errors. New exact-head CI/PM review
+is required before merging. Rust extraction remediation is isolated on a
+separate branch.

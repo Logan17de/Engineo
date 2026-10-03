@@ -90,8 +90,11 @@ merge only after that review. Continue independent implementation while waiting.
 - The Planner browser increment follows #55; exact publication/checks belong in
   draft PR #56. Head `898863995600bf2ea329f49619ebf1c0b8d936c9` passed CI
   `37021742551` and CodeQL `37021742356`, but PM rejected account/session-state
-  behavior. The revised session-binding/logout delta has 11 passing browser
-  cases; new exact-head CI and PM approval are required. Dependency Review
+  behavior. Its correction `0f18291` passed 11 browser cases and CI
+  `37083434654`, but independent review identified same-account reauthentication
+  and failed/hung identity-probe P2s. Those follow-up cases now pass 5/5 locally;
+  all 16 production-browser cases passed locally in 45.8s. New exact-head CI
+  and PM approval are required. Dependency Review
   `37021742359` failed on disabled Dependency Graph. See the
   [session reconciliation record](verification/2026-10-03-planner-session.md).
 - Remaining M1 workflow, baselines/progress/scenarios, resource/cost/EVM,

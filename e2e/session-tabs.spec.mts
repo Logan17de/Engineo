@@ -331,3 +331,127 @@ test("explicit sign out after session expiry permanently discards the accepted d
   );
   await expect(page.locator(".revisionBadge")).not.toContainText("Unsaved edits");
 });
+
+for (const retainWriteAccess of [true, false]) {
+  test(`same-account reauthentication in another tab retains expiry escrow and rechecks ${retainWriteAccess ? "write access" : "lost write access"}`, async ({
+    page,
+    context,
+  }) => {
+    const data = await fixture();
+    const session = await open(page, data);
+    await page
+      .getByRole("textbox", { name: "Activity 1 name", exact: true })
+      .fill("Escrow after same-account reauthentication");
+    await db`UPDATE auth_sessions SET revoked_at=now() WHERE id=${session}`;
+    await page.getByRole("button", { name: "Save & recalculate", exact: true }).click();
+    await expect(page.getByText(/unsaved edits are kept in this tab/)).toBeVisible();
+    if (!retainWriteAccess) {
+      await db`UPDATE organization_memberships SET role='viewer' WHERE organization_id=${data.organization} AND user_id=${data.a.id}`;
+      await db`UPDATE project_memberships SET role='viewer' WHERE organization_id=${data.organization} AND project_id=${data.project} AND user_id=${data.a.id}`;
+    }
+    const other = await context.newPage();
+    await other.goto("/");
+    // Reauthentication has no deliberate logout/discard intent.
+    await login(other, data.a);
+    await page.bringToFront();
+    await expect(page.getByText(/unsaved edits are kept in this tab/)).toBeVisible();
+    await expect(page.locator(".plannerPanel")).toHaveCount(0);
+    await login(page, data.a);
+    const activity = page.getByRole("textbox", { name: "Activity 1 name", exact: true });
+    await expect(activity).toHaveValue(
+      retainWriteAccess ? "Escrow after same-account reauthentication" : "Original saved activity",
+    );
+    if (retainWriteAccess) {
+      await expect(page.locator(".revisionBadge")).toContainText("Unsaved edits");
+    } else {
+      await expect(activity).toBeDisabled();
+      await expect(page.getByText(/project access changed/)).toBeVisible();
+      await expect(page.locator(".revisionBadge")).not.toContainText("Unsaved edits");
+    }
+    const saved = await page.request.get(`${path(data)}/schedule`);
+    expect(saved.status()).toBe(200);
+    const state = (await saved.json()) as { revision: number; input: EngineProjectInputV1 };
+    expect(state.revision).toBe(data.revision);
+    expect(state.input.activities[0]?.name).toBe("Original saved activity");
+    await other.close();
+  });
+}
+
+for (const failure of ["unavailable", "offline", "held"] as const) {
+  test(`without BroadcastChannel a changed cookie clears old data before ${failure} identity verification`, async ({
+    page,
+    context,
+  }) => {
+    await context.addInitScript(() => {
+      Object.defineProperty(globalThis, "BroadcastChannel", {
+        value: undefined,
+        configurable: true,
+      });
+    });
+    const data = await fixture();
+    await open(page, data);
+    await page
+      .getByRole("textbox", { name: "Activity 1 name", exact: true })
+      .fill("Unverified-account escrow");
+    const delayed = barrier();
+    let probed = false,
+      first = true,
+      delivered = false;
+    await page.route("**/auth/me", async (route) => {
+      if (!first) {
+        await route.continue();
+        return;
+      }
+      first = false;
+      probed = true;
+      if (failure === "offline") await route.abort("internetdisconnected");
+      else if (failure === "unavailable")
+        await route.fulfill({
+          status: 503,
+          contentType: "application/json",
+          body: JSON.stringify({ error: "temporarily_unavailable" }),
+        });
+      else {
+        const response = await route.fetch();
+        expect(response.status()).toBe(200);
+        expect(((await response.json()) as { user: Account }).user.id).toBe(data.b.id);
+        await delayed.promise;
+        await route.fulfill({ response }).catch(() => {});
+        delivered = true;
+      }
+    });
+    const other = await context.newPage();
+    try {
+      await switchAccount(other, data);
+      await page.bringToFront();
+      await expect.poll(() => probed).toBe(true);
+      await expect(
+        page.getByRole("heading", { name: "Sign in to Engineo", exact: true }),
+      ).toBeVisible({ timeout: 2000 });
+      await expect(page.locator(".plannerPanel")).toHaveCount(0);
+      await expect(page.locator(".projectCard")).toHaveCount(0);
+      await expect(page.locator(".account")).not.toContainText(data.a.email);
+      await expect(page.getByRole("alert", { name: "Error", exact: true })).toContainText(
+        "verification did not finish",
+        {
+          timeout: 7000,
+        },
+      );
+      await expect(page.getByRole("alert", { name: "Error", exact: true })).toBeFocused();
+      await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeEnabled();
+      // A failed probe cannot restore a workspace. Deliberate same-user login
+      // can consume the scoped escrow only after ordinary fresh authorization.
+      await login(page, data.a);
+      await expect(page.getByRole("textbox", { name: "Activity 1 name", exact: true })).toHaveValue(
+        "Unverified-account escrow",
+      );
+      delayed.release();
+      if (failure === "held") await expect.poll(() => delivered).toBe(true);
+      await expect(page.locator(".account")).toContainText(data.a.email);
+    } finally {
+      delayed.release();
+      await page.unroute("**/auth/me");
+      await other.close();
+    }
+  });
+}
