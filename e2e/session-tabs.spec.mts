@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { writeFile } from "node:fs/promises";
 import type { EngineProjectInputV1 } from "@engineo/contracts";
 import { type BrowserContext, expect, type Page, test } from "@playwright/test";
 import { createDatabase } from "../apps/api/src/db/client.js";
@@ -377,11 +378,16 @@ for (const retainWriteAccess of [true, false]) {
   });
 }
 
-for (const failure of ["unavailable", "offline", "held"] as const) {
-  test(`without BroadcastChannel a changed cookie clears old data before ${failure} identity verification`, async ({
-    page,
-    context,
-  }) => {
+for (const { failure, logoutGap } of [
+  { failure: "unavailable", logoutGap: false },
+  { failure: "offline", logoutGap: false },
+  { failure: "held", logoutGap: false },
+  { failure: "held", logoutGap: true },
+] as const) {
+  const name = logoutGap
+    ? "without BroadcastChannel a logout-gap 401 precedes real held B verification and A restoration"
+    : `without BroadcastChannel a changed cookie clears old data before ${failure} identity verification`;
+  test(name, async ({ page, context }, testInfo) => {
     await context.addInitScript(() => {
       Object.defineProperty(globalThis, "BroadcastChannel", {
         value: undefined,
@@ -395,15 +401,35 @@ for (const failure of ["unavailable", "offline", "held"] as const) {
       .fill("Unverified-account escrow");
     const delayed = barrier();
     let probed = false,
-      first = true,
-      delivered = false;
+      logoutGapResponses = 0,
+      verificationFailed = false,
+      injectingB = true,
+      heldResponsesReleased = 0;
+    const responses: { status: number; userId?: string; injected: boolean }[] = [];
     await page.route("**/auth/me", async (route) => {
-      if (!first) {
-        await route.continue();
+      // A focus/cookie probe can reach the real logout gap before B signs in.
+      // Forward that 401 (or a still-valid A response) without consuming B's fault.
+      const response = await route.fetch();
+      if (response.status() === 401) {
+        expect((await response.json()).error).toBe("unauthenticated");
+        responses.push({ status: 401, injected: false });
+        await route.fulfill({ response });
+        logoutGapResponses++;
         return;
       }
-      first = false;
+      expect(response.status()).toBe(200);
+      const identity = (await response.json()) as { user: Account };
+      expect([data.a.id, data.b.id]).toContain(identity.user.id);
+      if (identity.user.id === data.a.id || !injectingB) {
+        responses.push({ status: 200, userId: identity.user.id, injected: false });
+        await route.fulfill({ response });
+        return;
+      }
+      expect(identity.user.id).toBe(data.b.id);
+      responses.push({ status: 200, userId: identity.user.id, injected: true });
       probed = true;
+      // Timer retries must stay in the same B fault phase until deliberate A
+      // initialization succeeds; accepting a retry would test a different flow.
       if (failure === "offline") await route.abort("internetdisconnected");
       else if (failure === "unavailable")
         await route.fulfill({
@@ -412,17 +438,32 @@ for (const failure of ["unavailable", "offline", "held"] as const) {
           body: JSON.stringify({ error: "temporarily_unavailable" }),
         });
       else {
-        const response = await route.fetch();
-        expect(response.status()).toBe(200);
-        expect(((await response.json()) as { user: Account }).user.id).toBe(data.b.id);
         await delayed.promise;
         await route.fulfill({ response }).catch(() => {});
-        delivered = true;
+        heldResponsesReleased++;
       }
     });
     const other = await context.newPage();
     try {
-      await switchAccount(other, data);
+      if (logoutGap) {
+        await other.goto("/");
+        await expect(other.getByRole("button", { name: "Sign out", exact: true })).toBeEnabled();
+        await other.getByRole("button", { name: "Sign out", exact: true }).click();
+        await page.bringToFront();
+        // Keep B logged out until a genuine first-tab verification has returned 401.
+        // Repeated focus events wait for any earlier A probe to settle normally.
+        await expect
+          .poll(async () => {
+            await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+            return logoutGapResponses;
+          })
+          .toBeGreaterThan(0);
+        expect(probed).toBe(false);
+        await expect(page.getByRole("alert", { name: "Error", exact: true })).toContainText(
+          "Your session has ended",
+        );
+        await login(other, data.b);
+      } else await switchAccount(other, data);
       await page.bringToFront();
       await expect.poll(() => probed).toBe(true);
       await expect(
@@ -437,21 +478,66 @@ for (const failure of ["unavailable", "offline", "held"] as const) {
           timeout: 7000,
         },
       );
+      verificationFailed = true;
       await expect(page.getByRole("alert", { name: "Error", exact: true })).toBeFocused();
       await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeEnabled();
+      expect(heldResponsesReleased).toBe(0);
+      const injected = responses.filter((response) => response.injected);
+      expect(injected.length).toBeGreaterThan(0);
+      expect(
+        injected.every((response) => response.status === 200 && response.userId === data.b.id),
+      ).toBe(true);
       // A failed probe cannot restore a workspace. Deliberate same-user login
       // can consume the scoped escrow only after ordinary fresh authorization.
       await login(page, data.a);
       await expect(page.getByRole("textbox", { name: "Activity 1 name", exact: true })).toHaveValue(
         "Unverified-account escrow",
       );
+      await expect(page.locator(".revisionBadge")).toContainText("Unsaved edits");
+      injectingB = false;
       delayed.release();
-      if (failure === "held") await expect.poll(() => delivered).toBe(true);
+      if (failure === "held")
+        await expect
+          .poll(() => heldResponsesReleased)
+          .toBe(responses.filter((response) => response.injected).length);
       await expect(page.locator(".account")).toContainText(data.a.email);
+      await expect(page.getByRole("textbox", { name: "Activity 1 name", exact: true })).toHaveValue(
+        "Unverified-account escrow",
+      );
+      await expect(page.locator(".revisionBadge")).toContainText("Unsaved edits");
     } finally {
       delayed.release();
-      await page.unroute("**/auth/me");
-      await other.close();
+      try {
+        // Drain real fetches as well as held responses before serializing the
+        // evidence or closing the context. Unexpected handler errors still fail.
+        await page.unrouteAll({ behavior: "wait" });
+      } finally {
+        try {
+          await other.close();
+        } finally {
+          const evidencePath = testInfo.outputPath("identity-verification-evidence.json");
+          await writeFile(
+            evidencePath,
+            JSON.stringify(
+              {
+                failure,
+                logoutGap,
+                logoutGapResponses,
+                probed,
+                verificationFailed,
+                heldResponsesReleased,
+                responses,
+              },
+              null,
+              2,
+            ),
+          );
+          await testInfo.attach("identity-verification-evidence", {
+            contentType: "application/json",
+            path: evidencePath,
+          });
+        }
+      }
     }
   });
 }
