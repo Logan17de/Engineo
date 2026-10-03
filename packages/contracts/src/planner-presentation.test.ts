@@ -428,6 +428,45 @@ test("one-level WBS grouping uses native WBS order, distinct headers and exact v
   );
 });
 
+test("empty saved sources reject primitive activity maps for every result-dependent selector", () => {
+  const source = snapshot(input(0));
+  const presentations: Partial<PlannerPresentationV1>[] = [
+    { critical: "critical" },
+    { sort: { field: "earlyStart", direction: "asc" } },
+    { sort: { field: "totalFloatMinutes", direction: "asc" } },
+  ];
+  for (const presentation of presentations) {
+    for (const activities of [7, true]) {
+      const calc = comparatorCalculation(source);
+      (calc.result as unknown as { activities: unknown }).activities = activities;
+      rejected(
+        projectPlannerPresentationV1(source, calc, selection(presentation)),
+        "calculation_invalid",
+      );
+    }
+  }
+});
+
+test("valid empty saved result maps remain available without fabricated rows or groups", () => {
+  const source = snapshot(input(0));
+  const calc = comparatorCalculation(source);
+  for (const presentation of [
+    { critical: "critical" },
+    { sort: { field: "earlyStart", direction: "asc" } },
+    { sort: { field: "totalFloatMinutes", direction: "asc" } },
+  ] satisfies Partial<PlannerPresentationV1>[]) {
+    const projected = available(
+      projectPlannerPresentationV1(source, calc, selection(presentation)),
+    );
+    assert.deepEqual(projected.rows, []);
+    assert.equal(projected.sourceActivityCount, 0);
+    assert.equal(projected.visibleActivityCount, 0);
+    assert.equal(projected.visualRowCount, 0);
+    assert.equal(projected.groupCount, 0);
+    assert.equal(projected.binding.calculation?.calculationId, calc.metadata.calculationId);
+  }
+});
+
 test("empty matches are explicit successful zero counts and do not emit empty groups", () => {
   const projected = available(
     projectPlannerPresentationV1(snapshot(), null, selection({ search: "absent", groupBy: "wbs" })),

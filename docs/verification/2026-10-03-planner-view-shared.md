@@ -1,5 +1,33 @@
 # Shared private-view configuration and pure projection — 2026-10-03
 
+## PR #67 empty-source result-map correction
+
+Independent review of published head
+`ce3637431fadb361dfd3d44d51712714377694b1`, tree
+`d72a6b384107066efc2be6ec9bab93420cb2f412`, found that an empty saved
+source could treat `activities: 7` or `activities: true` as an empty result map.
+Correctly typed, independently verified callers are unaffected, but the pure
+boundary's malformed-result contract must still reject those values.
+
+The result map is now explicitly a non-null object and not an array before
+`Object.keys`. Six negative selector vectors (critical/date/float with each
+primitive) reproduce the exact baseline failure and now return
+`calculation_invalid`; three valid empty-object positives keep successful zero
+row/group counts and the consumed provenance. No authorization, source marker,
+schedule math, serializer, date key or existing assertion changed.
+
+Fresh corrected local full-stack checks passed: **92 contracts**, **107 CLI**,
+**211 genuine-DB API**, **127 scripts**, **59 built HTTP**, **15 TLS**, **51
+active Rust**, and **27 focused SQL/BIGINT invariants**, with zero TS/DB failures
+or skips and only the existing manual Rust benchmark ignored. Focused projector
+tests passed **25/25**, including actual 1,000-row Rust output. All types, builds,
+format/lint/Clippy and final source/runtime/Rust/ledger/inventory guards passed;
+Next-generated drift was restored and generated databases removed/PG stopped.
+The supported wrapper collects **51 browser cases only**. Fresh corrective-head
+remote browser/security gates and renewed independent review remain required.
+The sections below retain the original shared-layer candidate's historical
+90-test evidence; they are not the corrected-head counts.
+
 This is a shared-contract slice, **not saved-view feature acceptance**. It starts
 from reviewed main `1f18f945c3b598c51965d1bda86e7bde0d495cca`, tree
 `609307de35a0a4b4e81f48f44422d2cccbba3a9b`. Eight implementation/specification

@@ -259,7 +259,8 @@ function validRowResult(result: EngineScheduleResultV1, ids: Set<string>): boole
       "constraintViolations",
     ]) ||
     result.schemaVersion !== 1 ||
-    !result.activities ||
+    typeof result.activities !== "object" ||
+    result.activities === null ||
     Array.isArray(result.activities) ||
     Object.keys(result.activities).length !== ids.size
   )
