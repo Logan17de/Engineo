@@ -6,6 +6,7 @@ export type Permission =
   | "organization.manage"
   | "project.create"
   | "project.read"
+  | "view.private.write"
   | "project.write"
   | "schedule.run"
   | "project.members.manage";
@@ -50,6 +51,8 @@ export async function authorizeProject(
   projectId: string,
   permission: Permission,
 ): Promise<AccessDecision> {
+  // A personal presentation capability never broadens schedule/project writes.
+  const effectivePermission = permission === "view.private.write" ? "project.read" : permission;
   const organizationRows = await db`
     SELECT om.role
     FROM organization_memberships om
@@ -72,7 +75,7 @@ export async function authorizeProject(
 
   if (organizationRole === "owner" || organizationRole === "admin") {
     return {
-      allowed: organizationPermissions[organizationRole].has(permission),
+      allowed: organizationPermissions[organizationRole].has(effectivePermission),
       organizationRole,
       projectRole: null,
     };
@@ -89,8 +92,8 @@ export async function authorizeProject(
   const projectRole = projectRows[0]?.role as ProjectRole | undefined;
 
   const allowed =
-    organizationPermissions[organizationRole].has(permission) &&
-    (projectRole ? projectPermissions[projectRole].has(permission) : false);
+    organizationPermissions[organizationRole].has(effectivePermission) &&
+    (projectRole ? projectPermissions[projectRole].has(effectivePermission) : false);
 
   return {
     allowed,

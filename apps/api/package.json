@@ -10,7 +10,8 @@
     "test": "node --import tsx --test --test-concurrency=1 \"src/**/*.test.ts\"",
     "start": "node dist/server.js",
     "db:migrate": "tsx src/db/migrate-cli.ts",
-    "db:configuration-maintenance": "node dist/db/configuration-maintenance-cli.js"
+    "db:configuration-maintenance": "node dist/db/configuration-maintenance-cli.js",
+    "db:planner-view-maintenance": "node dist/db/planner-view-maintenance-cli.js"
   },
   "dependencies": {
     "@engineo/contracts": "workspace:*",
