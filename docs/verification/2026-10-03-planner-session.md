@@ -137,3 +137,18 @@ regressions and both builds). All 16 production-browser cases passed in 45.8
 seconds, zero retries/skips/unhandled page errors. New exact-head CI/PM review
 is required before merging. Rust extraction remediation is isolated on a
 separate branch.
+
+Further review of `d5e6fc1d0468fc12e563e1b48082d232caee2e61` found that
+complete membership removal bypassed escrow cleanup: no organization could be
+selected, or project reads returned 403 before cleanup. Confirmed missing
+organization membership and project-read 403/404 now discard escrow; transient
+failures retain it for deliberate retry. Two genuine browser cases delete the
+organization/project memberships in PostgreSQL, reauthenticate the same user,
+verify actual API denial/no draft editor, and reload without a stale unload
+warning. The targeted 2/2 run passed in 4.5 seconds. The prior 16-case head passed
+CI `37084939986` and query gates `37084939991`; Dependency Review
+`37084939981` failed. Independent review confirmed this access-loss correction
+and found no further concrete code blocker. Final full `check:ts` passed again
+(7 contracts, 36 API, 2 security regressions and both production builds).
+All 18 production-browser cases passed in 50.1 seconds, zero retries/skips/page
+errors. Revised-head CI and PM review are still required.

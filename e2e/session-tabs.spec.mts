@@ -455,3 +455,41 @@ for (const failure of ["unavailable", "offline", "held"] as const) {
     }
   });
 }
+
+for (const removed of ["organization", "project"] as const) {
+  test(`same-account recovery discards escrow after actual ${removed} membership removal`, async ({
+    page,
+  }) => {
+    const data = await fixture();
+    const session = await open(page, data);
+    await page
+      .getByRole("textbox", { name: "Activity 1 name", exact: true })
+      .fill("Escrow must be discarded after access loss");
+    await db`UPDATE auth_sessions SET revoked_at=now() WHERE id=${session}`;
+    await page.getByRole("button", { name: "Save & recalculate", exact: true }).click();
+    await expect(page.getByText(/unsaved edits are kept in this tab/)).toBeVisible();
+    if (removed === "organization")
+      await db`DELETE FROM organization_memberships WHERE organization_id=${data.organization} AND user_id=${data.a.id}`;
+    else {
+      await db`UPDATE organization_memberships SET role='planner' WHERE organization_id=${data.organization} AND user_id=${data.a.id}`;
+      await db`DELETE FROM project_memberships WHERE organization_id=${data.organization} AND project_id=${data.project} AND user_id=${data.a.id}`;
+    }
+    await login(page, data.a);
+    await expect(page.locator(".plannerPanel")).toHaveCount(0);
+    await expect(page.getByText(/project access changed/)).toBeVisible();
+    await expect(page.getByText(/unsaved edits are kept in this tab/)).toHaveCount(0);
+    const denied = await page.request.get(`${path(data)}/schedule`);
+    expect(denied.status()).toBe(403);
+    let unexpectedWarning = false;
+    const observe = async (dialog: import("@playwright/test").Dialog) => {
+      if (dialog.type() === "beforeunload") unexpectedWarning = true;
+      await dialog.accept();
+    };
+    page.on("dialog", observe);
+    await page.reload();
+    page.off("dialog", observe);
+    expect(unexpectedWarning).toBe(false);
+    await expect(page.locator(".account")).toContainText(data.a.email);
+    await expect(page.locator(".plannerPanel")).toHaveCount(0);
+  });
+}

@@ -187,7 +187,17 @@ export default function Planner() {
       clearWorkspace();
       setUser(me.user);
       setOrganizations(data.organizations);
-      const draft = recovery.current?.userId === me.user.id ? recovery.current : null;
+      let draft = recovery.current?.userId === me.user.id ? recovery.current : null;
+      const accessLost = () => {
+        recovery.current = null;
+        setHasRecovery(false);
+        setNotice("Your edits could not be restored because your project access changed.");
+        window.history.replaceState(null, "", "/");
+      };
+      if (draft && !data.organizations.some((org) => org.id === draft?.organizationId)) {
+        accessLost();
+        draft = null;
+      }
       if (!draft) {
         recovery.current = null;
         setHasRecovery(false);
@@ -204,7 +214,16 @@ export default function Planner() {
         await loadProjects(selected, signal);
         const project = draft?.snapshot.input.project.id ?? query.get("project");
         if (project) {
-          const current = await openProject(selected, project, signal);
+          let current: Awaited<ReturnType<typeof openProject>>;
+          try {
+            current = await openProject(selected, project, signal);
+          } catch (error) {
+            if (draft && error instanceof ApiError && [403, 404].includes(error.status)) {
+              accessLost();
+              return;
+            }
+            throw error;
+          }
           if (draft && selected === draft.organizationId) {
             if (current.permissions.write) {
               setSnapshot(draft.snapshot);

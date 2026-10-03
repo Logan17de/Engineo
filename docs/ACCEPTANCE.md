@@ -93,8 +93,11 @@ merge only after that review. Continue independent implementation while waiting.
   behavior. Its correction `0f18291` passed 11 browser cases and CI
   `37083434654`, but independent review identified same-account reauthentication
   and failed/hung identity-probe P2s. Those follow-up cases now pass 5/5 locally;
-  all 16 production-browser cases passed locally in 45.8s. New exact-head CI
-  and PM approval are required. Dependency Review
+  all 16 production-browser cases passed locally in 45.8s. Review then identified
+  complete-membership-removal escrow cleanup; those two additional browser
+  regressions pass 2/2 locally. The final full TS gate and all 18 browser cases
+  passed (50.1s); independent review found no remaining concrete code blocker.
+  Exact-head CI and PM approval are required. Dependency Review
   `37021742359` failed on disabled Dependency Graph. See the
   [session reconciliation record](verification/2026-10-03-planner-session.md).
 - Remaining M1 workflow, baselines/progress/scenarios, resource/cost/EVM,

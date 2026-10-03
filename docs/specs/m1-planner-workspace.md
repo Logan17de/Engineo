@@ -58,7 +58,9 @@ reauthentication preserves escrow; verified different accounts and deliberate
 logout discard it. Restoring escrow requires the ordinary fresh identity,
 organization, project and write-permission checks, and keeps its original
 revision. Loss of write access discards escrow and loads the saved read-only
-version. Notifications contain no credentials and no project data is stored in
+version. Missing organization membership and confirmed project-read 403/404
+also discard escrow; transient failures retain it for a deliberate retry.
+Notifications contain no credentials and no project data is stored in
 browser storage. Explicit accepted logout clears the draft before awaiting
 revocation; an already-expired session cannot resurrect it.
 
