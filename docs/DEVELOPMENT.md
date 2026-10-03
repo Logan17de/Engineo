@@ -74,9 +74,14 @@ The configured source database is not migrated, cleared or otherwise modified.
 The PostgreSQL role must have permission to create/drop its own fixture database.
 URLs with query overrides or non-loopback hosts are rejected. Each fixture
 database carries a random run marker checked against its actual database name
-and server address before resetting only `auth_rate_limits` between single-worker
-scenarios. Production login quotas remain unchanged and enforced within each
+and an exact source-server address/port pin before resetting only
+`auth_rate_limits` between single-worker scenarios. Production login quotas remain unchanged and enforced within each
 scenario; API security tests independently cover the real IP/account thresholds.
+Loopback restrictions apply to the client's configured endpoint. A local
+port-mapped PostgreSQL container can report its own non-loopback server address;
+the harness records that identity from the authorized source connection and
+requires the identical address/port on fixture initialization and every reset.
+The run marker also stores the pin. No private-network range is broadly trusted.
 Run acceptance through this wrapper rather than directly invoking Playwright.
 Playwright starts its own servers on ports 3100/4000. A system Chromium can be
 selected with `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`. See the

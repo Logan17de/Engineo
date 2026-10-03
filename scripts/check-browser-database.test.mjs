@@ -12,10 +12,50 @@ import {
 
 const runId = "610b4860-c601-4949-b065-ac1d04f7d650";
 const name = `engineo_browser_${runId.replaceAll("-", "_")}`;
+const identity = { address: "127.0.0.1", port: 5432 };
+const pin = JSON.stringify(identity);
+const marker = (id = runId, server = pin) => ({ run_id: id, server_identity: server });
 const env = {
   DATABASE_URL: `postgres://engineo@127.0.0.1:5432/${name}`,
   ENGINEO_BROWSER_TEST_RUN_ID: runId,
+  ENGINEO_BROWSER_TEST_SERVER_ID: pin,
 };
+
+function simulatedServer(sourceIdentity, fixtureIdentity = sourceIdentity) {
+  const queries = [];
+  const markers = new Map();
+  let observedFixture = fixtureIdentity;
+  const connect = (url) => {
+    const database = new URL(url).pathname.slice(1);
+    const sql = async (strings, ...values) => {
+      if (typeof strings === "string") return strings;
+      const query = strings.join("?");
+      queries.push({ database, query, values });
+      if (query.includes("current_database()")) {
+        return [{ name: database, ...(database === "engineo" ? sourceIdentity : observedFixture) }];
+      }
+      if (query.includes("INSERT INTO public.engineo_browser_test_guard")) {
+        markers.set(database, [marker(values[0], values[1])]);
+      } else if (query.includes("SELECT run_id::text")) {
+        return markers.get(database) ?? [];
+      }
+      return [];
+    };
+    // Identifier construction is synchronous, as in the postgres client.
+    const client = (strings, ...values) =>
+      typeof strings === "string" ? strings : sql(strings, ...values);
+    client.begin = (operation) => operation(client);
+    client.end = async () => {};
+    return client;
+  };
+  return {
+    connect,
+    queries,
+    changeFixture: (identity) => {
+      observedFixture = identity;
+    },
+  };
+}
 
 test("browser database URLs reject remote sources and connection overrides", () => {
   for (const host of ["127.0.0.1", "localhost", "[::1]"]) {
@@ -35,14 +75,34 @@ test("browser database URLs reject remote sources and connection overrides", () 
   }
 });
 
-test("quota reset requires the exact unique fixture name and run ID", () => {
-  assert.deepEqual(browserDatabaseEnvironment(env), { url: env.DATABASE_URL, runId });
+test("quota reset requires the exact unique fixture name, run ID and canonical source-server pin", () => {
+  assert.deepEqual(browserDatabaseEnvironment(env), {
+    url: env.DATABASE_URL,
+    runId,
+    serverIdentity: identity,
+  });
   for (const invalid of [
     {},
     { DATABASE_URL: env.DATABASE_URL },
     { ...env, ENGINEO_BROWSER_TEST_RUN_ID: "fixture" },
     { ...env, DATABASE_URL: "postgres://engineo@127.0.0.1/engineo" },
     { ...env, DATABASE_URL: env.DATABASE_URL.replace(name, `${name}_other`) },
+    ...[
+      undefined,
+      "",
+      "not JSON",
+      "null",
+      "{}",
+      "[]",
+      JSON.stringify({ address: "database.example", port: 5432 }),
+      JSON.stringify({ address: "127.0.0.1", port: "5432" }),
+      JSON.stringify({ address: "127.0.0.1", port: 0 }),
+      JSON.stringify({ address: "127.0.0.1", port: 65536 }),
+      JSON.stringify({ address: "127.0.0.1", port: 5432.5 }),
+      JSON.stringify({ address: "fe80::1%eth0", port: 5432 }),
+      JSON.stringify({ address: "127.0.0.1", port: 5432, extra: true }),
+      JSON.stringify({ port: 5432, address: "127.0.0.1" }),
+    ].map((server) => ({ ...env, ENGINEO_BROWSER_TEST_SERVER_ID: server })),
   ]) {
     assert.throws(() => browserDatabaseEnvironment(invalid));
   }
@@ -56,14 +116,21 @@ test("quota reset requires the exact unique fixture name and run ID", () => {
   }
 });
 
-test("failed database/name/address/marker checks never reach quota deletion", async () => {
+test("failed database/name/server-pin/marker checks never reach quota deletion", async () => {
   for (const state of [
-    { name: "engineo", address: "127.0.0.1", marker: [{ run_id: runId }] },
-    { name, address: "192.0.2.1", marker: [{ run_id: runId }] },
-    { name, address: null, marker: [{ run_id: runId }] },
+    { name: "engineo", address: "127.0.0.1", marker: [marker()] },
+    { name, address: "192.0.2.1", marker: [marker()] },
+    { name, address: null, marker: [marker()] },
+    { name, address: "127.0.0.1", port: 5433, marker: [marker()] },
+    { name, address: "127.0.0.1", port: "5432", marker: [marker()] },
     { name, address: "127.0.0.1", marker: [] },
-    { name, address: "127.0.0.1", marker: [{ run_id: randomUUID() }] },
-    { name, address: "127.0.0.1", marker: [{ run_id: runId }, { run_id: randomUUID() }] },
+    { name, address: "127.0.0.1", marker: [marker(randomUUID())] },
+    { name, address: "127.0.0.1", marker: [marker(), marker(randomUUID())] },
+    {
+      name,
+      address: "127.0.0.1",
+      marker: [marker(runId, JSON.stringify({ address: "172.17.0.2", port: 5432 }))],
+    },
     { name, address: "127.0.0.1", marker: null },
   ]) {
     const queries = [];
@@ -71,7 +138,7 @@ test("failed database/name/address/marker checks never reach quota deletion", as
       const query = strings.join("?");
       queries.push(query);
       if (query.includes("current_database()"))
-        return [{ name: state.name, address: state.address }];
+        return [{ name: state.name, address: state.address, port: state.port ?? 5432 }];
       if (query.includes("engineo_browser_test_guard")) {
         if (state.marker === null) throw new Error("fixture marker table is missing");
         return state.marker;
@@ -87,6 +154,111 @@ test("failed database/name/address/marker checks never reach quota deletion", as
   }
 });
 
+test("native and port-mapped loopback endpoints pin only the exact observed server identity", async () => {
+  for (const observed of [
+    { address: "127.0.0.1", port: 5439 },
+    { address: "172.17.0.2", port: 5432 },
+    { address: "fd00::2", port: 5432 },
+  ]) {
+    const server = simulatedServer(observed);
+    const fixture = await createBrowserDatabase(
+      "postgres://engineo@127.0.0.1:5439/engineo",
+      server.connect,
+    );
+    try {
+      assert.equal(new URL(fixture.env.DATABASE_URL).hostname, "127.0.0.1");
+      assert.equal(fixture.env.ENGINEO_BROWSER_TEST_SERVER_ID, JSON.stringify(observed));
+      const markerInsert = server.queries.find((entry) => entry.query.includes("INSERT INTO"));
+      assert.equal(markerInsert.values[1], fixture.env.ENGINEO_BROWSER_TEST_SERVER_ID);
+      await resetBrowserLoginQuota(server.connect(fixture.env.DATABASE_URL), fixture.env);
+      assert.equal(server.queries.filter((entry) => entry.query.includes("DELETE FROM")).length, 1);
+    } finally {
+      await fixture.dispose();
+    }
+  }
+});
+
+test("a changed container address or port cannot initialize the fixture or reset its quota", async () => {
+  const sourceIdentity = { address: "172.17.0.2", port: 5432 };
+  for (const different of [
+    { address: "172.17.0.3", port: 5432 },
+    { address: "172.17.0.2", port: 5433 },
+  ]) {
+    const initialMismatch = simulatedServer(sourceIdentity, different);
+    await assert.rejects(
+      createBrowserDatabase("postgres://engineo@127.0.0.1:5439/engineo", initialMismatch.connect),
+      /pinned source-server identity/,
+    );
+    const created = initialMismatch.queries.find((entry) =>
+      entry.query.includes("CREATE DATABASE"),
+    );
+    const dropped = initialMismatch.queries.find((entry) => entry.query.includes("DROP DATABASE"));
+    assert.deepEqual(dropped.values, created.values);
+    assert.equal(
+      initialMismatch.queries.some((entry) => entry.query.includes("CREATE TABLE")),
+      false,
+    );
+
+    const server = simulatedServer(sourceIdentity);
+    const fixture = await createBrowserDatabase(
+      "postgres://engineo@127.0.0.1:5439/engineo",
+      server.connect,
+    );
+    try {
+      server.changeFixture(different);
+      const db = server.connect(fixture.env.DATABASE_URL);
+      await assert.rejects(
+        resetBrowserLoginQuota(db, fixture.env),
+        /pinned source-server identity/,
+      );
+      // Editing the environment cannot substitute a new server identity: the
+      // marker still binds the fixture to its original source-server pin.
+      await assert.rejects(
+        resetBrowserLoginQuota(db, {
+          ...fixture.env,
+          ENGINEO_BROWSER_TEST_SERVER_ID: JSON.stringify(different),
+        }),
+        /fixture database marker/,
+      );
+      assert.equal(
+        server.queries.some((entry) => entry.query.includes("DELETE FROM")),
+        false,
+      );
+    } finally {
+      await fixture.dispose();
+    }
+  }
+});
+
+test("malformed server pins and source URLs fail before SQL without exposing credentials", async () => {
+  let connected = false;
+  await assert.rejects(
+    createBrowserDatabase("postgres://owner:secret-fixture-password@127.0.0.1:bad/engineo", () => {
+      connected = true;
+    }),
+    (error) => {
+      assert.equal(JSON.stringify(error).includes("secret-fixture-password"), false);
+      assert.equal(error.message.includes("secret-fixture-password"), false);
+      return true;
+    },
+  );
+  assert.equal(connected, false);
+  let queried = false;
+  const sql = async () => {
+    queried = true;
+    throw new Error("Must not query invalid pin");
+  };
+  sql.begin = (operation) => operation(sql);
+  await assert.rejects(
+    resetBrowserLoginQuota(sql, {
+      ...env,
+      ENGINEO_BROWSER_TEST_SERVER_ID: "secret-fixture-password",
+    }),
+    /pin is missing or malformed/,
+  );
+  assert.equal(queried, false);
+});
+
 test("failed fixture initialization drops only its new database and closes connections", async () => {
   const queries = [];
   const closed = [];
@@ -97,7 +269,7 @@ test("failed fixture initialization drops only its new database and closes conne
       const query = strings.join("?");
       queries.push({ database, query, values });
       if (query.includes("current_database()")) {
-        return Promise.resolve([{ name: database, address: "127.0.0.1" }]);
+        return Promise.resolve([{ name: database, address: "127.0.0.1", port: 5432 }]);
       }
       if (query.includes("CREATE TABLE")) return Promise.reject(new Error("fixture setup failed"));
       return Promise.resolve([]);
@@ -121,7 +293,7 @@ test("cleanup failure still closes the administrative database connection", asyn
       if (typeof strings === "string") return strings;
       const query = strings.join("?");
       if (query.includes("current_database()")) {
-        return Promise.resolve([{ name: database, address: "127.0.0.1" }]);
+        return Promise.resolve([{ name: database, address: "127.0.0.1", port: 5432 }]);
       }
       if (query.includes("CREATE TABLE") || query.includes("DROP DATABASE")) {
         return Promise.reject(new Error("fixture setup or cleanup failed"));
@@ -169,6 +341,16 @@ test("real disposable quota reset preserves data and real SQL / Fastify login th
   const second = buildApp({ database: db });
   const fixtureName = new URL(fixture.env.DATABASE_URL).pathname.slice(1);
   try {
+    const sourceServer = await source`
+      SELECT host(inet_server_addr()) AS address, inet_server_port() AS port
+    `;
+    assert.equal(
+      fixture.env.ENGINEO_BROWSER_TEST_SERVER_ID,
+      JSON.stringify({
+        address: sourceServer[0].address,
+        port: sourceServer[0].port,
+      }),
+    );
     await migrateDatabase(db);
     const user = randomUUID(),
       organization = randomUUID(),
@@ -255,6 +437,10 @@ test("real disposable quota reset preserves data and real SQL / Fastify login th
     await t.test("tampered/missing run markers fail closed without clearing counters", async () => {
       await db`INSERT INTO auth_rate_limits (key_sha256,attempts,expires_at)
         VALUES (${"3".repeat(64)},60,now() + interval '5 minutes')`;
+      await db`UPDATE engineo_browser_test_guard SET server_identity=${JSON.stringify({ address: "192.0.2.1", port: 5432 })}`;
+      await assert.rejects(resetBrowserLoginQuota(db, fixture.env), /fixture database marker/);
+      assert.equal(Number((await db`SELECT attempts FROM auth_rate_limits`)[0].attempts), 60);
+      await db`UPDATE engineo_browser_test_guard SET server_identity=${fixture.env.ENGINEO_BROWSER_TEST_SERVER_ID}`;
       await db`UPDATE engineo_browser_test_guard SET run_id=${randomUUID()}`;
       await assert.rejects(resetBrowserLoginQuota(db, fixture.env));
       assert.equal(Number((await db`SELECT attempts FROM auth_rate_limits`)[0].attempts), 60);

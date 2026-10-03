@@ -28,7 +28,13 @@ and add an evidence record under `docs/verification/` with each reviewed increme
   and disposable quota-state isolation are source-reviewed; fresh combined
   local gates pass (8 contracts / 76 API / 24 scripts / 51 active Rust tests),
   and the corrected command collects 41 cases. Fresh full remote CI and renewed
-  exact-head review are still required.
+  exact-head review are still required. Its first correction run `37108813901`
+  stopped before browser/build/audit because the fixture confused a local
+  Docker-mapped client endpoint with the server-side address; supported topology
+  pinning is source-reviewed without production or broad-network exceptions.
+  The final combined local gates pass 8 contracts / 76 API / 27 scripts / 51
+  active Rust tests and collect 41 cases; real Docker/browser execution and
+  renewed exact-head review remain pending.
   Full M1 and production release remain incomplete.
 - The main-push 24/25 fixture failure after #60 was corrected separately in
   reviewed PR #62, exact head `d067ee9`, tree `b2a52da1`. Fresh CI `37104811376`

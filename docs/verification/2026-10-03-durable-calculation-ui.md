@@ -45,6 +45,7 @@ attestation. Input/result integrity hashes are SHA-256.
 | JavaScript high-severity audit | passed; no known vulnerabilities reported |
 | Final TypeScript/build/test gate after retry/500-response refinements | passed again: contracts 8, API 76, security/consistency scripts 11, all typing/format/lint and both builds |
 | Combined correction gate after toolbar/fixture source review | passed: contracts 8, API 76, security/consistency/fixture scripts 24, all TypeScript/e2e typing, format/lint, both production builds, Rustfmt/Clippy and 51 active Rust tests; zero contract/API/script skips |
+| Final topology follow-up combined gate | passed: contracts 8, API 76, security/consistency/fixture scripts 27, all TypeScript/e2e typing, format/lint, both production builds, Rustfmt/Clippy and 51 active Rust tests; zero contract/API/script skips |
 | Browser-test collection | 39 cases across four files after the independently reviewed fixture correction; collection is not behavioral execution |
 | Corrected browser command/discovery | passed: 41 cases across four files using the dedicated per-run database; no fixture databases remain afterward; collection is not behavioral execution |
 | Local browser runtime | unrun behavior: verified Chromium Unix-socket launch restriction and truncated pinned Playwright downloads remain |
@@ -128,6 +129,37 @@ The corrected suite contains 41 cases. Both corrections require a fresh full
 exact-head browser/security run and renewed independent review. Passed initial
 query/dependency jobs do not clear the failed browser gate or constitute approval
 of subsequent changes.
+
+### Service-topology follow-up
+
+Correction head `4f9ad2684f13819bc0c7a8dc7f2160895765f0fd` / tree
+`aad09dec6b0eb596c09feb03f8563b2bef270760` passed all combined local gates but
+[CI `37108813901`](https://github.com/Logan17de/Engineo/actions/runs/37108813901)
+stopped in the fixture SQL test before building or running browsers. Contracts
+8 and API 76 passed; scripts passed 20/21, with the three nested quota scenarios
+never entered. Build, JavaScript audit and all 41 browser cases were skipped.
+No runtime toolbar acceptance or passing PNG evidence is claimed from that run.
+CodeQL `37108813880` independently passed with digest-matched downloaded SARIF:
+empty findings, Rust 21 clean / zero failed / 21 individually matched expected
+sources, successful invocation and no extraction diagnostics. Both Rust suites
+passed 51 active tests on 1.99/1.97 (one manual benchmark ignored); Rust audit and
+Dependency Review `37108813885` passed. These do not clear the failed TypeScript
+or never-run browser gates.
+
+The harness confused its required loopback **client endpoint** with PostgreSQL's
+**server-side interface**. The supported CI PostgreSQL Docker service is published
+to a loopback client port; its own address need not be loopback. The follow-up
+keeps strict loopback/no-query-override client URLs and binds the dedicated
+fixture's address/port to the exact observed authorized source-server endpoint,
+alongside the created database/run marker. This does not introduce a broad private
+network allowlist or alter production connectivity/authentication settings.
+Mismatch and marker guards plus a new full exact-head run remain required.
+The independently source-reviewed follow-up passes actual native PostgreSQL
+quota/state tests and simulated port-mapped IPv4/IPv6 identities, including
+changed address/port and malformed/tampered pin/marker denial. The final combined
+local suite passes 27 scripts, retains both real threshold denials and collects
+all 41 browser cases with no leftover fixture databases. Actual Docker topology
+and UI runtime acceptance still belong to the fresh remote run.
 
 ## Populated disposable backup/restore drill
 
