@@ -19,10 +19,6 @@ jobs:
       actions: read
       security-events: write
       packages: read
-    # Keep generated dependency sources outside the repository inventory that
-    # CodeQL scans before loading the Cargo workspace and expanding macros.
-    env:
-      CARGO_TARGET_DIR: ${{ runner.temp }}/engineo-codeql-target
     strategy:
       fail-fast: false
       matrix:
@@ -38,7 +34,12 @@ jobs:
 
       - name: Prepare the supported Rust extraction toolchain
         if: matrix.language == 'rust'
+        env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/engineo-codeql-target
         run: |
+          # Keep generated dependency sources outside the initial source scan.
+          # Persist the same output location for initialization and extraction.
+          echo "CARGO_TARGET_DIR=$CARGO_TARGET_DIR" >> "$GITHUB_ENV"
           rustup toolchain install 1.97.0 --profile minimal --component rust-src
           cargo +1.97.0 check --workspace --all-targets --all-features --locked
 
