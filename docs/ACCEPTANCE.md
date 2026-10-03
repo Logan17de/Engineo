@@ -82,6 +82,14 @@ merge only after that review. Continue independent implementation while waiting.
 
 ## Current review stack
 
+- `fix/planner-recovery-identity` follows PR #58 at
+  `bd85a6f8ee4b559376db475cedcbd04d74651314`. It corrects PM's verified-user
+  discard-boundary finding from PR #56. Full local static/API/Rust/security gates
+  pass; two added combined browser cases are implemented but local Chromium
+  cannot start under this executor's Unix-socket restriction. Exact-head remote
+  browser execution and review are required: [recovery boundary record](verification/2026-10-03-recovery-identity.md).
+  The previously unpublished durable-calculation checkpoint is not restored.
+
 - `feat/planner-csv-roundtrip` follows PR #57 at `c8bd175875b4514d65549814fd56b5c2d461338e`.
   Scoped #51 activity CSV preview/apply passes local API and browser validation;
   exact publication SHA, CI and security results belong to its draft PR. This

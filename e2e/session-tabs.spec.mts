@@ -456,6 +456,90 @@ for (const failure of ["unavailable", "offline", "held"] as const) {
   });
 }
 
+for (const sameAccount of [false, true]) {
+  test(`verified ${sameAccount ? "same" : "different"} account ${sameAccount ? "retains" : "discards"} recovery before failed organization loading and unavailable fallback probes`, async ({
+    page,
+  }) => {
+    const data = await fixture();
+    const session = await open(page, data);
+    const draftName = "Recovery scoped to the original immutable account";
+    await page.getByRole("textbox", { name: "Activity 1 name", exact: true }).fill(draftName);
+    await db`UPDATE auth_sessions SET revoked_at=now() WHERE id=${session}`;
+    await page.getByRole("button", { name: "Save & recalculate", exact: true }).click();
+    await expect(page.getByText(/unsaved edits are kept in this tab/)).toBeVisible();
+
+    const account = sameAccount ? data.a : data.b;
+    const organizationResponse = barrier();
+    let verifiedIdentity = false,
+      organizationsRequested = false,
+      failedFallbackProbes = 0;
+    await page.route("**/auth/me", async (route) => {
+      if (verifiedIdentity) {
+        await route.fulfill({ status: 503, json: { error: "temporarily_unavailable" } });
+        failedFallbackProbes++;
+        return;
+      }
+      const response = await route.fetch();
+      expect(response.status()).toBe(200);
+      expect(((await response.json()) as { user: Account }).user.id).toBe(account.id);
+      verifiedIdentity = true;
+      await route.fulfill({ response });
+    });
+    await page.route("**/api/organizations", async (route) => {
+      organizationsRequested = true;
+      await organizationResponse.promise;
+      await route.fulfill({ status: 503, json: { error: "temporarily_unavailable" } });
+    });
+    try {
+      await page.getByRole("textbox", { name: "Email", exact: true }).fill(account.email);
+      await page.getByRole("textbox", { name: "Password", exact: true }).fill(password);
+      await page.getByRole("button", { name: "Sign in", exact: true }).click();
+      await expect.poll(() => verifiedIdentity && organizationsRequested).toBe(true);
+      const recoveryNotice = page.getByText(/unsaved edits are kept in this tab/);
+      // Verify the discard boundary while organization I/O is still pending.
+      await expect(recoveryNotice).toHaveCount(sameAccount ? 1 : 0);
+      await expect
+        .poll(() =>
+          page.evaluate(() => {
+            const event = new Event("beforeunload", { cancelable: true });
+            window.dispatchEvent(event);
+            return event.defaultPrevented;
+          }),
+        )
+        .toBe(sameAccount);
+      organizationResponse.release();
+      await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeEnabled();
+      await expect(page.locator(".plannerPanel")).toHaveCount(0);
+      await expect(page.locator(".projectCard")).toHaveCount(0);
+      await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+      if (sameAccount) {
+        await expect.poll(() => failedFallbackProbes).toBeGreaterThan(0);
+        await expect(page.getByRole("alert", { name: "Error", exact: true })).toContainText(
+          "verification did not finish",
+        );
+      } else expect(failedFallbackProbes).toBe(0);
+      await expect(recoveryNotice).toHaveCount(sameAccount ? 1 : 0);
+    } finally {
+      organizationResponse.release();
+      await page.unroute("**/api/organizations");
+      await page.unroute("**/auth/me");
+    }
+    // A later explicit login must not resurrect a draft after verified B.
+    await login(page, data.a);
+    await expect(page.getByRole("textbox", { name: "Activity 1 name", exact: true })).toHaveValue(
+      sameAccount ? draftName : "Original saved activity",
+    );
+    await expect(page.locator(".revisionBadge")).toContainText(
+      sameAccount ? "Unsaved edits" : `Revision ${data.revision}`,
+    );
+    const saved = await page.request.get(`${path(data)}/schedule`);
+    expect(saved.status()).toBe(200);
+    const state = (await saved.json()) as { revision: number; input: EngineProjectInputV1 };
+    expect(state.revision).toBe(data.revision);
+    expect(state.input.activities[0]?.name).toBe("Original saved activity");
+  });
+}
+
 for (const removed of ["organization", "project"] as const) {
   test(`same-account recovery discards escrow after actual ${removed} membership removal`, async ({
     page,
