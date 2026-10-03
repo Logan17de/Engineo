@@ -32,6 +32,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      - name: Prepare the supported Rust extraction toolchain
+        if: matrix.language == 'rust'
+        env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/engineo-codeql-target
+        run: |
+          # Keep generated dependency sources outside the initial source scan.
+          # Persist the same output location for initialization and extraction.
+          echo "CARGO_TARGET_DIR=$CARGO_TARGET_DIR" >> "$GITHUB_ENV"
+          rustup toolchain install 1.97.0 --profile minimal --component rust-src
+          cargo +1.97.0 check --workspace --all-targets --all-features --locked
+
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
         with:
@@ -47,6 +58,10 @@ jobs:
 
       - name: Reject high severity security findings
         run: node scripts/check-codeql.mjs codeql-results
+
+      - name: Require complete Rust extraction
+        if: matrix.language == 'rust'
+        run: node scripts/check-rust-extraction.mjs codeql-results
 
       - name: Retain security evidence
         if: always()

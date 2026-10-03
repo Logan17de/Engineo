@@ -91,6 +91,19 @@ jobs:
       - name: Test
         run: cargo test --workspace --locked
 
+  rust-compatibility:
+    name: Rust minimum toolchain
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install minimum toolchain
+        run: rustup toolchain install 1.97.0 --profile minimal
+
+      - name: Test declared minimum Rust version
+        run: cargo +1.97.0 test --workspace --all-targets --all-features --locked
+
   rust-security:
     name: Rust dependency audit
     runs-on: ubuntu-latest

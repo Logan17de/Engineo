@@ -4,7 +4,7 @@
 
 - Node.js 24+
 - pnpm 12.8+
-- Rust 1.99 with `rustfmt` and `clippy`
+- Rust 1.99 with `rustfmt` and `clippy`; the verified minimum compiler is 1.97
 - Git
 
 The repository pins the Rust toolchain in `rust-toolchain.toml` and declares the pnpm version in the root `package.json`.
