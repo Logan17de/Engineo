@@ -77,6 +77,15 @@ Executed final checks:
 
 Exact-head remote browser/security results and independent review remain pending.
 
+Independent source review identified an additional harness cleanup race:
+`page.unroute()` does not await already-running real fetch/fulfill handlers.
+Cleanup now releases held responses and drains routing with
+`page.unrouteAll({ behavior: "wait" })` before teardown/evidence serialization.
+Nested `finally` blocks still persist evidence if draining or tab closure fails;
+unexpected status/assertion/handler errors are not suppressed. Final browser-test
+typing, formatting and whitespace checks pass after this refinement. New-head
+full remote execution remains required.
+
 Local Chromium execution is already known to be blocked before browser test
 bodies by the executor's Unix-socket restriction, including an approved retry;
 the pinned browser archive is truncated. Neither restriction was bypassed and

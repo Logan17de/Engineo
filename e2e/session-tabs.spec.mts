@@ -507,29 +507,37 @@ for (const { failure, logoutGap } of [
       await expect(page.locator(".revisionBadge")).toContainText("Unsaved edits");
     } finally {
       delayed.release();
-      await page.unroute("**/auth/me");
-      await other.close();
-      const evidencePath = testInfo.outputPath("identity-verification-evidence.json");
-      await writeFile(
-        evidencePath,
-        JSON.stringify(
-          {
-            failure,
-            logoutGap,
-            logoutGapResponses,
-            probed,
-            verificationFailed,
-            heldResponsesReleased,
-            responses,
-          },
-          null,
-          2,
-        ),
-      );
-      await testInfo.attach("identity-verification-evidence", {
-        contentType: "application/json",
-        path: evidencePath,
-      });
+      try {
+        // Drain real fetches as well as held responses before serializing the
+        // evidence or closing the context. Unexpected handler errors still fail.
+        await page.unrouteAll({ behavior: "wait" });
+      } finally {
+        try {
+          await other.close();
+        } finally {
+          const evidencePath = testInfo.outputPath("identity-verification-evidence.json");
+          await writeFile(
+            evidencePath,
+            JSON.stringify(
+              {
+                failure,
+                logoutGap,
+                logoutGapResponses,
+                probed,
+                verificationFailed,
+                heldResponsesReleased,
+                responses,
+              },
+              null,
+              2,
+            ),
+          );
+          await testInfo.attach("identity-verification-evidence", {
+            contentType: "application/json",
+            path: evidencePath,
+          });
+        }
+      }
     }
   });
 }
