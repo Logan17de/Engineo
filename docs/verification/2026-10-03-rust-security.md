@@ -93,3 +93,22 @@ moving generated build outputs remains pending.
 Dependency Review remains failed because Dependency Graph is disabled. No
 repository setting or merge is changed. PM exact-head review and operational
 release gates remain required.
+
+## Subsequent verified foundation integration
+
+The corrected coverage implementation was later included in reviewed PR #59 and
+atomic integration PR #60. Integration head `b29dd49f7d16bb79ab647d7f7875222d2b384d1a`,
+synthetic merge `008a227565f46aa008563b14422daaddfedf4bff`, and merged main
+`b36ecc4d9483b925583bbf9a673c0040436a63e1` all have exactly tree
+`f626302e6bf0ffa68e55c6d060c0ca62b3bdddee`. CodeQL `37102353980` passed
+both language query gates and the Rust inventory gate: **19 clean sources,
+zero failed, 19 expected**, with empty high/error finding arrays.
+
+Dependency Graph was explicitly authorized and enabled after the earlier
+blocked runs. Main-based Dependency Review `37102353955` successfully reviewed
+the complete accumulated dependency delta. PR #60 was independently approved
+and merged atomically; its fresh main-push CI/CodeQL remained a separate pending
+check when this note was updated. The historical failures above are not current
+coverage status. New durable-calculation build/identity source files require
+fresh exact-head inventory evidence, not reuse of the foundation's 19-file count.
+Operational release, provenance and deployment gates remain incomplete.

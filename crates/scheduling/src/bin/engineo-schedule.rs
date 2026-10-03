@@ -6,13 +6,23 @@ use serde_json::json;
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    let engine_version = env!("ENGINEO_ENGINE_VERSION");
+    if args == ["--engine-info"] {
+        println!(
+            "{}",
+            json!({ "engineVersion": engine_version, "engineContractVersion": 1 })
+        );
+        return ExitCode::SUCCESS;
+    }
     if args == ["--time-zones"] {
         let mut zones: Vec<_> = engineo_calendar::supported_time_zones().collect();
         zones.sort_unstable();
         println!("{}", json!(zones));
         return ExitCode::SUCCESS;
     }
-    if !args.is_empty() {
+    let pinned_version =
+        args.len() == 2 && args[0] == "--engine-version" && args[1] == engine_version;
+    if !args.is_empty() && !pinned_version {
         eprintln!("{}", json!({ "error": "unsupported_option" }));
         return ExitCode::FAILURE;
     }

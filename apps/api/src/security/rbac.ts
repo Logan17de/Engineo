@@ -1,4 +1,4 @@
-import type { Database } from "../db/client.js";
+import type { DatabaseExecutor } from "../db/client.js";
 
 export type OrganizationRole = "owner" | "admin" | "planner" | "viewer";
 export type ProjectRole = "manager" | "planner" | "viewer";
@@ -44,7 +44,7 @@ export interface AccessDecision {
 }
 
 export async function authorizeProject(
-  db: Database,
+  db: DatabaseExecutor,
   userId: string,
   organizationId: string,
   projectId: string,
@@ -100,7 +100,7 @@ export async function authorizeProject(
 }
 
 export async function authorizeOrganization(
-  db: Database,
+  db: DatabaseExecutor,
   userId: string,
   organizationId: string,
   permission: Permission,

@@ -45,12 +45,18 @@ Deliverables:
 - project summary;
 - CSV/spreadsheet import/export;
 - authentication, basic project roles, and audit trail.
+- GUI and headless parity: documented HTTP API/application CLI, versioned
+  project configuration, machine-readable results, and validate/plan/apply
+  workflows for material automation with the same authorization and audit rules.
 
 Exit:
 - user can build a 1,000+ activity project without leaving Engineo;
 - edits and recalculation remain responsive;
 - every calculated date in UI comes from deterministic engine;
 - project data is exportable.
+- Authorized automation can perform core Planner workflows without driving the
+  GUI; repeated, stale, invalid and unauthorized requests have explicit outcomes.
+  See [headless workflow acceptance](specs/headless-automation-v1.md).
 
 ## M2 — Professional schedule controls
 
