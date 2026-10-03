@@ -139,13 +139,13 @@ function array(value: unknown, maximum: number): unknown[] {
   try {
     if (!Array.isArray(value)) integrity();
     if (Object.getPrototypeOf(value) !== Array.prototype) integrity();
+    const length = Object.getOwnPropertyDescriptor(value, "length")?.value as unknown;
+    if (!integer(length) || length > maximum) integrity();
     const descriptors = Object.getOwnPropertyDescriptors(value) as Record<
       string,
       PropertyDescriptor
     >;
-    const length = descriptors.length?.value as unknown;
-    if (!integer(length) || length > maximum || Reflect.ownKeys(descriptors).length !== length + 1)
-      integrity();
+    if (Reflect.ownKeys(descriptors).length !== length + 1) integrity();
     const result: unknown[] = [];
     for (let index = 0; index < length; index++) {
       const descriptor = descriptors[String(index)];
@@ -738,11 +738,25 @@ export function checkViewProjection(
     !integer(source.visualRowCount) ||
     !integer(source.groupCount) ||
     source.visibleActivityCount > source.sourceActivityCount ||
+    source.groupCount > source.visibleActivityCount ||
     source.visualRowCount !== source.visibleActivityCount + source.groupCount
   )
     integrity();
+  // The existing schedule/configuration protocol admits at most 10,000
+  // activities, independently of private-view storage budgets. An unfiltered
+  // presentation cannot omit a native activity, even when sorting/grouping.
+  if (source.sourceActivityCount > 10_000) integrity();
+  const presentation = config.configuration.presentation;
+  if (
+    presentation.search === "" &&
+    presentation.kind === "all" &&
+    presentation.wbsId === null &&
+    presentation.critical === "all" &&
+    source.visibleActivityCount !== source.sourceActivityCount
+  )
+    integrity();
   const binding = projectionBinding(source.binding, target, config, expectedScheduleRevision);
-  const rawRows = array(source.rows, VIEW_CAPABILITY_LIMITS_V1.projectionBytes);
+  const rawRows = array(source.rows, 20_000);
   if (rawRows.length !== source.visualRowCount) integrity();
   const rows: PlannerVisualRowV1[] = [];
   const activities = new Set<string>(),
@@ -779,8 +793,14 @@ export function checkViewProjection(
         row.activityCount > source.visibleActivityCount ||
         typeof row.wbsCode !== "string" ||
         !row.wbsCode.isWellFormed() ||
+        [...row.wbsCode].length > 100 ||
+        row.wbsCode.includes("\0") ||
+        row.wbsCode.trim().length === 0 ||
         typeof row.wbsName !== "string" ||
         !row.wbsName.isWellFormed() ||
+        [...row.wbsName].length > 500 ||
+        row.wbsName.includes("\0") ||
+        row.wbsName.trim().length === 0 ||
         (config.configuration.presentation.wbsId !== null &&
           wbsId !== config.configuration.presentation.wbsId)
       )

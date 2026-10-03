@@ -1,6 +1,7 @@
 import { constants, createReadStream, fstatSync } from "node:fs";
 import { open, unlink } from "node:fs/promises";
 import { Socket } from "node:net";
+import { dirname } from "node:path";
 import type { Readable } from "node:stream";
 import { CliError } from "./errors.js";
 
@@ -162,7 +163,10 @@ function decode(bytes: Buffer, preserveBom = false): string {
 }
 
 /** Reserve before network mutations. A failed/incomplete plan never leaves an applyable artifact. */
-export async function reserveOutput(path: string): Promise<{
+export async function reserveOutput(
+  path: string,
+  syncDirectory = false,
+): Promise<{
   save: (value: unknown) => Promise<void>;
   discard: () => Promise<void>;
 }> {
@@ -195,13 +199,23 @@ export async function reserveOutput(path: string): Promise<{
       try {
         await handle.writeFile(serialized, "utf8");
         await handle.sync();
+        if (syncDirectory) {
+          const directory = await open(dirname(path), constants.O_RDONLY);
+          try {
+            await directory.sync();
+          } finally {
+            await directory.close();
+          }
+        }
         await handle.close();
         closed = true;
       } catch {
         throw new CliError(
           "unavailable",
           "output_write_failed",
-          "Could not save complete output. Mutation outcome may already be recorded; query the same identity.",
+          syncDirectory
+            ? "Could not sync complete private-view output and its directory entry; no durable artifact is claimed."
+            : "Could not save complete output. Mutation outcome may already be recorded; query the same identity.",
         );
       }
     },

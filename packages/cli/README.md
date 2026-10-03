@@ -227,3 +227,83 @@ mock transports do not substitute for socket/GUI parity. Root integration owns
 exact-head full CI, GUI and 1,000-activity parity. There is no real credential,
 identity provisioning, deployment, monitoring/backup, operational SLO or license
 release in this increment.
+
+## Private Planner views: client source increment
+
+The additive `engineo views` namespace uses the private-view v1 interfaces from
+API PR #68. That API is still draft/held. This client source increment has pure
+mocked verification only; it is not saved-view HTTP, browser, real-engine,
+GUI/headless parity or production acceptance. Existing commands above retain
+their original namespace.
+
+Run `engineo views help` for the closed option contract. Remote commands use the
+same explicit origins, organization/project and existing private session file or
+descriptor as the legacy CLI. No credential is stored in a configuration, review,
+projection, receipt or command output.
+
+```sh
+# Configure only destination identifiers and the path to existing session material.
+remote=(--api-origin "$API_ORIGIN" --app-origin "$APP_ORIGIN"
+        --organization "$ORG_ID" --project "$PROJECT_ID"
+        --auth-file "$SESSION_FILE")
+
+engineo views validate --file private-view.json --offline
+engineo views capabilities "${remote[@]}"
+engineo views list "${remote[@]}" --limit 20
+engineo views read "${remote[@]}" --view-id "$VIEW_ID" --out exported-view.json
+
+# Use the server window from capabilities, an explicit caller UUID, and a current
+# schedule revision. This only previews; it does not create a pending server plan.
+engineo views plan "${remote[@]}" --action create --file private-view.json \
+  --operation-window "$SERVER_WINDOW" --operation-id "$OPERATION_ID" \
+  --expected-schedule-revision "$SCHEDULE_REVISION" --out create-review.json
+
+# Only apply sends a view mutation. Preserve this exact review after uncertainty.
+engineo views apply "${remote[@]}" --review create-review.json \
+  --expected-schedule-revision "$SCHEDULE_REVISION"
+engineo views status "${remote[@]}" --operation-window "$SERVER_WINDOW" \
+  --operation-id "$OPERATION_ID" --review create-review.json
+
+engineo views select "${remote[@]}" --view-id "$VIEW_ID" \
+  --expected-schedule-revision "$SCHEDULE_REVISION" --out named-projection.json
+engineo views project "${remote[@]}" --file private-view.json \
+  --expected-schedule-revision "$SCHEDULE_REVISION"
+```
+
+Update previews additionally require `--view-id` and `--expected-view-revision`
+alongside the complete replacement configuration. Delete previews require those
+two flags and omit `--file`. Every preview must be saved to a new output path;
+it is independently bound to the complete base/desired configurations, both
+revisions, action, actor/original session, destination and operation identity.
+Apply reads that complete saved review and sends only `{review,reviewedDigest}`.
+
+Original view configuration/review bytes reject BOM, malformed UTF-8, duplicate
+decoded keys, unknown fields, noncanonical numeric tokens and excessive depth or
+size. Parse failures use fixed redacted diagnostics. Responses additionally require
+the explicit session intent, `no-store` and exact JSON media type. Config/review
+hash domains are independently checked; digests do not grant permission or prove
+real-engine provenance.
+
+For an unusable response after apply, recovery issues one status GET for the exact
+original window/UUID, without another mutation. A recorded matching receipt is a
+historical outcome; later view edits/deletion do not change it. Open-window absence
+remains uncertain. Closed-window definitive absence is reported explicitly.
+Interruption during apply or recovery retains the operation key and
+`outcomeKnown:false`; it never implies cancellation. A new authenticated session
+can query its actor's historical receipt, but cannot apply an old-session review.
+Do not allocate a fresh UUID or infer completion from a same-named record.
+
+`select` projects a named view for that invocation; it does not persist a current
+selection, edit a schedule or calculate. `project` can use a transient strict
+configuration. Both return the shared rows/counts/binding DTO, including legitimate
+filtered empty results. Observable target/revision/hash, complete unfiltered
+visibility, row/group identity/order/count and source-size invariants are checked.
+Coherent source/result verification and real-engine compatibility remain the
+authenticated API's responsibility.
+
+New view files use exclusive creation and mode 0600, sync the complete file and
+its parent directory, and never overwrite an existing path. Unsupported directory
+sync or an oversized pretty export fails without claiming a durable artifact.
+These syscalls do not establish hardware/filesystem crash acceptance. Keep the
+complete review until the outcome is established; stdout delivery alone is not
+a durable receipt. Windows/external HTTPS and operational durability remain unrun.

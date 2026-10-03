@@ -34,6 +34,7 @@ const responsePolicy = {
   maxRequestBytes: PLANNER_VIEW_MAX_OPERATION_BYTES,
   preserveBom: true,
   requireNoStore: true,
+  exactJsonMediaType: true,
 };
 function viewRequest(
   client: ApiClient,
@@ -103,7 +104,7 @@ export async function runViewsCli(
     const client = new ApiClient(target, session, deadline, interruption);
     await client.verifyIdentity();
     const output = args.remote.values.has("out")
-      ? await reserveOutput(args.remote.values.get("out") ?? "")
+      ? await reserveOutput(args.remote.values.get("out") ?? "", true)
       : undefined;
     try {
       const data = await executeViews(args, client, signal, interruption, deadline);
@@ -245,7 +246,17 @@ async function applyView(
     );
     return { historical: true, receipt, recovered: false };
   } catch (error) {
-    if (!(error instanceof AmbiguousTransport)) throw error;
+    // A 2xx response can be lost or unusable after commit. Header/body/receipt
+    // integrity failures, redirects and 5xx responses therefore require the
+    // same original-key status query, never another mutation or a fresh key.
+    const httpStatus =
+      error instanceof CliError && record(error.details) ? error.details.httpStatus : undefined;
+    if (
+      error instanceof CliError &&
+      (error.code === "request_too_large" ||
+        (typeof httpStatus === "number" && httpStatus >= 400 && httpStatus < 500))
+    )
+      throw error;
     if (interruption.aborted) throw unknownApply(plan, true);
     let status: ReturnType<typeof checkViewOperationStatus>;
     try {
@@ -258,6 +269,7 @@ async function applyView(
         plan,
       );
     } catch (recoveryError) {
+      if (interruption.aborted) throw unknownApply(plan, true);
       if (recoveryError instanceof CliError && !(recoveryError instanceof AmbiguousTransport))
         throw new CliError(
           recoveryError.category,
@@ -265,7 +277,7 @@ async function applyView(
           "Recovery query was rejected; the original view mutation outcome remains unknown.",
           { operationWindowId: window, operationId, outcomeKnown: false },
         );
-      throw unknownApply(plan, false);
+      throw unknownApply(plan, interruption.aborted);
     }
     if (status.receipt) return { historical: true, receipt: status.receipt, recovered: true };
     if (status.absenceDefinitive)
@@ -275,7 +287,7 @@ async function applyView(
         "The operation window closed with no recorded mutation for the original identity.",
         { operationWindowId: window, operationId, outcomeKnown: true },
       );
-    throw unknownApply(plan, false);
+    throw unknownApply(plan, interruption.aborted);
   }
 }
 

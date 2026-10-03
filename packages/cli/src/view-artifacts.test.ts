@@ -57,6 +57,7 @@ function config(name = "My tasks"): PlannerViewConfigurationV1 {
     visibility: "private",
     presentation: {
       ...NATIVE_PLANNER_PRESENTATION_V1,
+      search: "fixture matching subset",
       sort: { field: "native", direction: "asc" },
     },
   };
@@ -255,6 +256,33 @@ test("view source uses duplicate-aware original-byte configuration parsing and i
       ]),
     (error: unknown) => error instanceof CliError && error.code === "credentials_in_artifact",
   );
+});
+
+test("unfiltered projections preserve every source activity and obey the existing entity ceiling", () => {
+  const configuration = config();
+  configuration.presentation.search = "";
+  const value = projection(configuration);
+  assertIntegrity(() => checkViewProjection(value, target, configuration, 7));
+  value.sourceActivityCount = 2;
+  const second = value.rows[1];
+  assert.ok(second && second.kind === "activity");
+  second.nativeIndex = 1;
+  assert.deepEqual(checkViewProjection(value, target, configuration, 7), value);
+  for (const groupBy of ["none", "wbs"] as const) {
+    configuration.presentation.groupBy = groupBy;
+    const empty = projection(configuration);
+    empty.rows = [];
+    empty.visibleActivityCount = 0;
+    empty.visualRowCount = 0;
+    empty.groupCount = 0;
+    assertIntegrity(() => checkViewProjection(empty, target, configuration, 7));
+    empty.sourceActivityCount = 0;
+    assert.deepEqual(checkViewProjection(empty, target, configuration, 7), empty);
+  }
+  configuration.presentation.search = "no matches";
+  const beyondCeiling = projection(configuration);
+  beyondCeiling.sourceActivityCount = 10001;
+  assertIntegrity(() => checkViewProjection(beyondCeiling, target, configuration, 7));
 });
 
 test("view read is closed, hash bound and independently normalized", () => {
@@ -708,10 +736,21 @@ test("WBS projections require unique nonempty headers, contiguous membership, ex
     [{ ...gA, activityCount: 0 }, a, gB, b],
     [gA, a, { ...gB, wbsId: id(20), key: keyA }, b],
     [{ ...gA, key: "arbitrary-group-key" }, a, gB, b],
+    [{ ...gA, wbsCode: "" }, a, gB, b],
+    [{ ...gA, wbsName: " " }, a, gB, b],
+    [{ ...gA, wbsCode: "\0" }, a, gB, b],
+    [{ ...gA, wbsName: "with\0nul" }, a, gB, b],
+    [{ ...gA, wbsCode: "😀".repeat(101) }, a, gB, b],
+    [{ ...gA, wbsName: "😀".repeat(501) }, a, gB, b],
     [a, gA, gB, b],
     [gA, gB, a, b],
   ])
     assertIntegrity(() => checkViewProjection({ ...value, rows }, target, configuration, 7));
+  const unicode = {
+    ...value,
+    rows: [{ ...gA, wbsCode: "😀".repeat(60), wbsName: "😀".repeat(300) }, a, gB, b],
+  };
+  assert.equal(checkViewProjection(unicode, target, configuration, 7).visibleActivityCount, 2);
   const together = {
     ...value,
     rows: [{ ...gA, activityCount: 2 }, a, { ...b, groupKey: keyA }],

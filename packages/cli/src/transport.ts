@@ -93,6 +93,7 @@ export class ApiClient {
       maxRequestBytes?: number;
       preserveBom?: boolean;
       requireNoStore?: boolean;
+      exactJsonMediaType?: boolean;
     } = {},
   ): Promise<unknown> {
     const serialized = body === undefined ? undefined : JSON.stringify(body);
@@ -191,7 +192,12 @@ export class ApiClient {
       return integrity();
     }
     if (!response.ok) throw remoteError(response.status, value);
-    if (!(response.headers.get("content-type") ?? "").toLowerCase().startsWith("application/json"))
+    const mediaType = (response.headers.get("content-type") ?? "").toLowerCase();
+    if (
+      policy.exactJsonMediaType
+        ? mediaType.split(";")[0]?.trim() !== "application/json"
+        : !mediaType.startsWith("application/json")
+    )
       integrity();
     if (intent !== this.session.sessionId) integrity();
     if (
