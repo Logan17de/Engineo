@@ -32,6 +32,7 @@ Engineo is not designed as a clone of any incumbent product. It is being built f
 Engineo is in **foundation planning**. The first engineering target is the deterministic scheduling kernel.
 
 See:
+- [Application automation CLI](packages/cli/README.md) — private versioned JSON configuration/plan/apply client; separate from the Rust scheduling CLI
 - [Product definition](docs/PRODUCT.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Roadmap](docs/ROADMAP.md)
