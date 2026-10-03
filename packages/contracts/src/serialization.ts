@@ -1,4 +1,4 @@
-import { WEEKDAYS, type EngineProjectInputV1, type WeekdayV1 } from "./schedule.js";
+import { type EngineProjectInputV1, WEEKDAYS, type WeekdayV1 } from "./schedule.js";
 
 function compareText(a: string, b: string): number {
   return a.localeCompare(b, "en");

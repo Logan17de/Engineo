@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  type EngineProjectInputV1,
+  MAX_WORK_MINUTES,
   serializeScheduleInputV1,
   validateScheduleInputV1,
-  type EngineProjectInputV1,
 } from "./index.js";
 
 function validInput(): EngineProjectInputV1 {
@@ -81,6 +82,18 @@ function validInput(): EngineProjectInputV1 {
   };
 }
 
+test("signed relationship lag agrees with the engine's u32 magnitude range", () => {
+  for (const sign of [-1, 1]) {
+    const input = validInput();
+    const relationship = input.relationships[0];
+    assert.ok(relationship);
+    relationship.lagMinutes = sign * MAX_WORK_MINUTES;
+    assert.equal(validateScheduleInputV1(input).valid, true);
+    relationship.lagMinutes = sign * (MAX_WORK_MINUTES + 1);
+    assert.ok(validateScheduleInputV1(input).issues.some((issue) => issue.code === "INVALID_LAG"));
+  }
+});
+
 test("valid M0 input passes semantic validation", () => {
   const result = validateScheduleInputV1(validInput());
 
@@ -132,4 +145,46 @@ test("serialization is deterministic across collection ordering", () => {
   };
 
   assert.equal(serializeScheduleInputV1(first), serializeScheduleInputV1(second));
+});
+
+test("calendar and constraint dates reject normalized impossible dates", () => {
+  const input = validInput();
+  input.project.plannedStart = "2026-02-31T08:00:00Z";
+  const calendar = input.calendars[0];
+  const activity = input.activities[1];
+  assert.ok(calendar);
+  assert.ok(activity);
+  calendar.exceptions.push({ date: "2026-02-30", workingIntervals: [] });
+  activity.constraints.push({ type: "START_ON_OR_AFTER", instant: "2026-01-01T24:00:00Z" });
+  const issues = validateScheduleInputV1(input).issues;
+  assert.ok(issues.some((issue) => issue.path === "project.plannedStart"));
+  assert.ok(issues.some((issue) => issue.path === "calendars[0].exceptions[0].date"));
+  assert.ok(issues.some((issue) => issue.path.endsWith("constraints[0].instant")));
+});
+
+test("relationship loops are rejected and deep WBS chains validate without recursion", () => {
+  const input = validInput();
+  input.relationships.push({
+    predecessorId: "A110",
+    successorId: "A100",
+    type: "SS",
+    lagMinutes: 0,
+  });
+  assert.ok(
+    validateScheduleInputV1(input).issues.some((issue) => issue.code === "RELATIONSHIP_CYCLE"),
+  );
+  input.relationships.pop();
+  for (let i = 0; i < 10_000; i++)
+    input.wbs.push({
+      id: `node-${i}`,
+      parentId: i ? `node-${i - 1}` : "wbs-root",
+      code: String(i + 2),
+      name: "Deep node",
+      sortOrder: i,
+    });
+  assert.equal(validateScheduleInputV1(input).valid, true);
+  const root = input.wbs[0];
+  assert.ok(root);
+  root.parentId = "node-9999";
+  assert.ok(validateScheduleInputV1(input).issues.some((issue) => issue.code === "WBS_CYCLE"));
 });

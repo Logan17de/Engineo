@@ -9,18 +9,24 @@
   "scripts": {
     "dev": "pnpm --filter @engineo/contracts build && pnpm --parallel --filter @engineo/web --filter @engineo/api dev",
     "build": "pnpm -r --if-present build",
-    "typecheck": "pnpm --filter @engineo/contracts build && pnpm -r --if-present typecheck",
+    "typecheck": "pnpm --filter @engineo/contracts build && pnpm -r --if-present typecheck && pnpm typecheck:e2e",
     "test:ts": "pnpm --filter @engineo/contracts build && pnpm -r --if-present test",
+    "test:security": "node --test scripts/*.test.mjs",
     "lint": "biome lint .",
     "format": "biome format --write . && cargo fmt --all",
     "format:check": "biome format . && cargo fmt --all -- --check",
-    "check:ts": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test:ts && pnpm run build",
-    "check:rust": "cargo fmt --all -- --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace",
+    "check:ts": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test:ts && pnpm run test:security && pnpm run build",
+    "check:rust": "cargo fmt --all -- --check && cargo clippy --workspace --all-targets --locked -- -D warnings && cargo test --workspace --locked",
     "check": "pnpm run check:ts && pnpm run check:rust",
-    "audit:ts": "pnpm audit --audit-level high"
+    "audit:ts": "pnpm audit --audit-level high",
+    "test:browser": "playwright test",
+    "typecheck:e2e": "tsc -p tsconfig.e2e.json"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.0",
+    "@engineo/contracts": "workspace:*",
+    "@playwright/test": "1.63.0",
+    "@types/node": "24.5.2",
     "typescript": "5.9.3"
   }
 }

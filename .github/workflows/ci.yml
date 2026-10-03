@@ -32,6 +32,7 @@ jobs:
           --health-retries 10
     env:
       DATABASE_URL: postgres://engineo:engineo@127.0.0.1:5432/engineo
+      ENGINEO_SCHEDULER_BIN: ${{ github.workspace }}/target/release/engineo-schedule
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -49,13 +50,27 @@ jobs:
           package-manager-cache: false
 
       - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Rust toolchain for API integration
+        uses: actions-rust-lang/setup-rust-toolchain@v2
+
+      - name: Build the real schedule bridge
+        run: |
+          cargo build --release --locked -p engineo-scheduling --bin engineo-schedule
+          node scripts/generate-time-zones.mjs --check
 
       - name: Quality checks
         run: pnpm check:ts
 
       - name: Dependency audit
         run: pnpm audit --audit-level high
+
+      - name: Install Chromium for browser acceptance
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Browser Planner acceptance
+        run: pnpm test:browser
 
   rust:
     name: Rust engine
@@ -71,10 +86,23 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
       - name: Test
-        run: cargo test --workspace
+        run: cargo test --workspace --locked
+
+  rust-compatibility:
+    name: Rust minimum toolchain
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install minimum toolchain
+        run: rustup toolchain install 1.97.0 --profile minimal
+
+      - name: Test declared minimum Rust version
+        run: cargo +1.97.0 test --workspace --all-targets --all-features --locked
 
   rust-security:
     name: Rust dependency audit
