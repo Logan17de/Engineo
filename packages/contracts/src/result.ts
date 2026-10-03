@@ -31,3 +31,14 @@ export interface EngineScheduleResultV1 {
     actualInstant: string;
   }>;
 }
+
+/** An auditable result for one immutable saved project revision. */
+export interface ScheduleCalculationV1 {
+  id: string;
+  revision: number;
+  engineContractVersion: 1;
+  inputHash: string;
+  resultHash: string;
+  completedAt: string;
+  result: EngineScheduleResultV1;
+}

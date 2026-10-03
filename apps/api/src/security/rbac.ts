@@ -1,4 +1,4 @@
-import type { Database } from "../db/client.js";
+import type { DatabaseExecutor } from "../db/client.js";
 
 export type OrganizationRole = "owner" | "admin" | "planner" | "viewer";
 export type ProjectRole = "manager" | "planner" | "viewer";
@@ -43,8 +43,31 @@ export interface AccessDecision {
   projectRole: ProjectRole | null;
 }
 
+/** Apply the same policy to database rows already locked by a write transaction. */
+export function projectAccessDecision(
+  organizationRole: OrganizationRole | null,
+  projectRole: ProjectRole | null,
+  permission: Permission,
+): AccessDecision {
+  if (!organizationRole) return { allowed: false, organizationRole: null, projectRole: null };
+  if (organizationRole === "owner" || organizationRole === "admin") {
+    return {
+      allowed: organizationPermissions[organizationRole].has(permission),
+      organizationRole,
+      projectRole: null,
+    };
+  }
+  return {
+    allowed:
+      organizationPermissions[organizationRole].has(permission) &&
+      (projectRole ? projectPermissions[projectRole].has(permission) : false),
+    organizationRole,
+    projectRole,
+  };
+}
+
 export async function authorizeProject(
-  db: Database,
+  db: DatabaseExecutor,
   userId: string,
   organizationId: string,
   projectId: string,
@@ -63,19 +86,11 @@ export async function authorizeProject(
   const organizationRole = organizationRows[0]?.role as OrganizationRole | undefined;
 
   if (!organizationRole) {
-    return {
-      allowed: false,
-      organizationRole: null,
-      projectRole: null,
-    };
+    return projectAccessDecision(null, null, permission);
   }
 
   if (organizationRole === "owner" || organizationRole === "admin") {
-    return {
-      allowed: organizationPermissions[organizationRole].has(permission),
-      organizationRole,
-      projectRole: null,
-    };
+    return projectAccessDecision(organizationRole, null, permission);
   }
 
   const projectRows = await db`
@@ -88,19 +103,11 @@ export async function authorizeProject(
   `;
   const projectRole = projectRows[0]?.role as ProjectRole | undefined;
 
-  const allowed =
-    organizationPermissions[organizationRole].has(permission) &&
-    (projectRole ? projectPermissions[projectRole].has(permission) : false);
-
-  return {
-    allowed,
-    organizationRole,
-    projectRole: projectRole ?? null,
-  };
+  return projectAccessDecision(organizationRole, projectRole ?? null, permission);
 }
 
 export async function authorizeOrganization(
-  db: Database,
+  db: DatabaseExecutor,
   userId: string,
   organizationId: string,
   permission: Permission,

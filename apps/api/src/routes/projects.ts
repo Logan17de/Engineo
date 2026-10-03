@@ -23,6 +23,11 @@ import {
   RevisionConflictError,
 } from "../repositories/planner-repository.js";
 import { ProjectRepository } from "../repositories/project-repository.js";
+import {
+  ScheduleRunCommitError,
+  ScheduleRunRepository,
+  serializeScheduleRunInput,
+} from "../repositories/schedule-run-repository.js";
 import { ScheduleEngineError, type ScheduleRunner } from "../scheduler/runner.js";
 import { appendAuditEvent } from "../security/audit.js";
 import { authorizeOrganization, authorizeProject, type Permission } from "../security/rbac.js";
@@ -192,6 +197,7 @@ export function registerProjectRoutes(
 ): void {
   const projects = new ProjectRepository(db);
   const planner = new PlannerRepository(db);
+  const runs = new ScheduleRunRepository(db);
 
   app.get<{ Params: OrganizationParams }>(
     "/organizations/:organizationId/projects",
@@ -329,6 +335,7 @@ export function registerProjectRoutes(
       const snapshot = await projects.plannerSnapshot(
         tenantContext(request.params.organizationId, principal.userId, request.id),
         request.params.projectId,
+        true,
       );
       if (!snapshot) {
         await reply.code(404).send({ error: "project_not_found" });
@@ -439,29 +446,21 @@ export function registerProjectRoutes(
       reply.raw.once("close", disconnected);
       if (request.raw.aborted || reply.raw.destroyed) controller.abort();
       try {
+        serializeScheduleRunInput(snapshot.input);
         const result = await scheduleRunner.calculate(snapshot.input, controller.signal);
-        await appendAuditEvent(db, {
-          organizationId: request.params.organizationId,
-          actorType: "user",
-          actorId: principal.userId,
-          action: "schedule.run",
-          resourceType: "project",
-          resourceId: request.params.projectId,
-          source: "api",
-          correlationId: request.id,
-          payload: {
-            revision: snapshot.revision,
-            inputHash: createHash("sha256")
-              .update(serializeScheduleInputV1(snapshot.input))
-              .digest("hex"),
-            resultHash: createHash("sha256").update(JSON.stringify(result)).digest("hex"),
-            engineContractVersion: 1,
-          },
-        });
-
-        await reply.send({ revision: snapshot.revision, result });
+        const calculation = await runs.record(
+          tenantContext(request.params.organizationId, principal.userId, request.id),
+          principal.sessionId,
+          snapshot,
+          result,
+          controller.signal,
+        );
+        const { result: _storedResult, ...run } = calculation;
+        await reply.send({ revision: calculation.revision, result, run });
       } catch (error) {
-        if (error instanceof ScheduleEngineError) {
+        if (error instanceof ScheduleRunCommitError) {
+          await reply.code(error.statusCode).send({ error: error.code });
+        } else if (error instanceof ScheduleEngineError) {
           if (error.statusCode === 503) reply.header("Retry-After", "1");
           await reply.code(error.statusCode).send({ error: error.code, message: error.message });
         } else throw error;

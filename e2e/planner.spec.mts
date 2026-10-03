@@ -4,14 +4,16 @@ import {
   canonicalizeScheduleInputV1,
   type EngineProjectInputV1,
   type EngineScheduleResultV1,
+  type ScheduleCalculationV1,
 } from "@engineo/contracts";
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Page, request as requestFactory, test } from "@playwright/test";
 import { createDatabase } from "../apps/api/src/db/client.js";
 import { migrateDatabase } from "../apps/api/src/db/migrate.js";
 import { tenantContext } from "../apps/api/src/db/tenant-context.js";
 import { PlannerRepository } from "../apps/api/src/repositories/planner-repository.js";
 import { ProjectRepository } from "../apps/api/src/repositories/project-repository.js";
 import { hashPassword } from "../apps/api/src/security/password.js";
+import { issueSession } from "../apps/api/src/security/session.js";
 
 const password = "disposable-loopback-browser-fixture";
 const owner = { id: randomUUID(), email: `${randomUUID()}@example.test` };
@@ -47,7 +49,11 @@ function projectPath(page: Page) {
 async function snapshot(page: Page) {
   const response = await page.request.get(`${projectPath(page)}/schedule`);
   expect(response.status()).toBe(200);
-  return (await response.json()) as { revision: number; input: EngineProjectInputV1 };
+  return (await response.json()) as {
+    revision: number;
+    input: EngineProjectInputV1;
+    calculation: ScheduleCalculationV1 | null;
+  };
 }
 async function csrf(page: Page) {
   const cookie = (await page.context().cookies()).find((item) => item.name === "engineo_csrf");
@@ -130,6 +136,24 @@ test.beforeAll(async () => {
   await planner.replaceSchedule(context, large.projectId, 1, largeSnapshot.input);
   viewerLargeProject = large.projectId;
   await db`INSERT INTO project_memberships (organization_id,project_id,user_id,role) VALUES (${org},${viewerLargeProject},${viewer.id},'viewer')`;
+  const session = await issueSession(db, owner.id, owner.email, null, undefined);
+  const client = await requestFactory.newContext({
+    baseURL: "http://127.0.0.1:3100",
+    extraHTTPHeaders: {
+      cookie: `engineo_session=${session.token}; engineo_csrf=${session.csrfToken}`,
+      "x-csrf-token": session.csrfToken,
+      origin: "http://127.0.0.1:3100",
+    },
+  });
+  try {
+    const calculated = await client.post(
+      `/api/organizations/${org}/projects/${viewerLargeProject}/schedule/run`,
+      { data: { expectedRevision: 2 } },
+    );
+    expect(calculated.status()).toBe(200);
+  } finally {
+    await client.dispose();
+  }
 });
 test.afterAll(async () => {
   await db.end({ timeout: 5 });
@@ -269,6 +293,12 @@ test("create/edit/recalculate 1000 activities, calendar controls, keyboard range
     "Save your edits before exporting",
   );
   await recalculate(page, "09 Oct 2026, 09:00");
+  const persistedRunId = (await snapshot(page)).calculation?.id;
+  expect(persistedRunId).toBeTruthy();
+  await page.reload();
+  await expect(page.locator(".summaryStrip")).toContainText("09 Oct 2026, 09:00");
+  expect((await snapshot(page)).calculation?.id).toBe(persistedRunId);
+  await expect(page.locator(".ganttBar")).toHaveCount(24);
   await page.getByRole("searchbox", { name: "Find activities", exact: true }).fill("Final package");
   await expect(page.locator("tbody tr:not(.spacer)")).toHaveCount(1);
   await page.getByRole("searchbox", { name: "Find activities", exact: true }).fill("");
@@ -429,6 +459,7 @@ test("expired session recovers drafts only for the same immutable account and lo
   page,
 }) => {
   await openFixture(page);
+  await recalculate(page, "05 Oct 2026, 17:00");
   await page
     .getByRole("textbox", { name: "Activity 1 name", exact: true })
     .fill("Recovered session draft");
@@ -443,6 +474,7 @@ test("expired session recovers drafts only for the same immutable account and lo
     "Recovered session draft",
   );
   await expect(page.locator(".revisionBadge")).toContainText("Unsaved edits");
+  await expect(page.locator(".ganttBar")).toHaveCount(0);
   expect((await snapshot(page)).input.activities[0]?.name).not.toBe("Recovered session draft");
   page.once("dialog", (dialog) => dialog.dismiss());
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
@@ -505,6 +537,8 @@ test("session expiry after a confirmed save restores current persisted state wit
 
 test("viewer controls and foreign project requests enforce tenant boundaries", async ({ page }) => {
   await openFixture(page, viewer, viewerLargeProject);
+  await expect(page.locator(".ganttBar")).toHaveCount(24);
+  expect((await snapshot(page)).calculation?.result.projectFinish).toBeTruthy();
   await expect(page.getByRole("textbox", { name: "Activity 1 name", exact: true })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Recalculate", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Add activities", exact: true })).toHaveCount(0);

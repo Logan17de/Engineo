@@ -1,4 +1,8 @@
-export type { ActivityScheduleResultV1, EngineScheduleResultV1 } from "./result.js";
+export type {
+  ActivityScheduleResultV1,
+  EngineScheduleResultV1,
+  ScheduleCalculationV1,
+} from "./result.js";
 export {
   type ActivityConstraintV1,
   type ActivityInputV1,

@@ -32,7 +32,7 @@ and add an evidence record under `docs/verification/` with each reviewed increme
 | M0 scale | Document sparse/dense 1k/10k/100k runs with SHA, compiler, CPU, memory, build profile, counts and timings | passed: [measured scale record](verification/2026-10-02-m0-performance.md); RSS and repeated reference-machine budgets pending |
 | S0 supply chain | JS/Rust lockfiles, frozen/locked installs, high vulnerability gates, build-script policy, minimal CI permissions, threat model, no secrets, dependency review | frozen/locked inputs and CI/CodeQL passed on PR #54 `de1b88f`; dependency review failed because Dependency Graph is disabled, owner approval pending |
 | M1 identity | Org/project creation, sessions/revocation/CSRF/Origin, server RBAC, audit, abuse controls and negative cross-tenant tests | auth/API and scoped browser negatives pass: [auth](verification/2026-10-02-auth.md), [API](verification/2026-10-02-planner-api.md), [browser](verification/2026-10-02-planner-browser.md); full identity administration/role matrix and production controls pending |
-| M1 Planner | WBS CRUD/restructure, virtualized grid and synchronized Gantt, relationships/calendars/constraints, schedule controls, 1k+ activities created/edited/recalculated in browser | scoped browser increment passed: [execution record](verification/2026-10-02-planner-browser.md); durable results, full latency characterization and remaining workflow exits pending |
+| M1 Planner | WBS CRUD/restructure, virtualized grid and synchronized Gantt, relationships/calendars/constraints, schedule controls, 1k+ activities created/edited/recalculated in browser | scoped browser increment passed; durable results pass independent local API/browser checks: [durable execution record](verification/2026-10-03-durable-calculations.md); reconciliation, exact-head CI/security, full latency characterization and remaining workflow exits pending |
 | M1 data/workflow | Data date + basic progress, filters/group/sort/saved views, project summary, CSV/spreadsheet import/export, explicit failures, data ownership | pending |
 | S1 production controls | Encrypted transport/storage and secret-store integration; automated encrypted backups; measured restore; project authorization and audit | never run operationally; no production credentials or infrastructure |
 | M2 controls | Immutable baselines/variance; richer constraints; suspend/resume, actual/remaining and out-of-sequence policies; longest/multiple paths; diagnostics/date reasons; codes/custom fields | pending |
@@ -90,3 +90,21 @@ merge only after that review. Continue independent implementation while waiting.
   its draft PR. Its local five-case acceptance run passed.
 - Remaining M1 workflow, baselines/progress/scenarios, resource/cost/EVM,
   enterprise/AI/integrations and operational gates are pending. No release is complete.
+
+## 2026-10-03 follow-up checks
+
+- PR #56 `14240f0258d0b74b9c31d6c5daf132a4ec234b5a` passed CI 37085477145,
+  including all 18 production browser cases. Account correction review is pending;
+  it is not yet reconciled into the separate durable-result branch.
+- PR #57 `c8bd175875b4514d65549814fd56b5c2d461338e` passed CI 37086703440 and
+  CodeQL 37086703382, with 19 clean/zero erroneous Rust sources, full per-source
+  extraction evidence and no high/error findings. Dependency Review 37086703368
+  failed explicitly on disabled Dependency Graph; owner permission is unanswered.
+- Durable calculation local checks passed: 14 dedicated checks included in 49 API
+  checks, 7 contracts, 2 inherited SARIF regressions, both builds and 5 browser flows.
+  [Spec](specs/m1-durable-calculations.md), [execution record](verification/2026-10-03-durable-calculations.md)
+  and [operational drill](operations/durable-calculation-drill.md) identify the
+  unverified/review gates. This independent increment remains unpublished.
+- Backup/restore is never run: PostgreSQL 18 client utilities are absent and the
+  official client package download was blocked by the environment proxy 403.
+  No operational readiness or production release is claimed.

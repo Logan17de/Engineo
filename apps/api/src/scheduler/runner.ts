@@ -4,6 +4,7 @@ import {
   type EngineScheduleResultV1,
   isRfc3339Instant,
 } from "@engineo/contracts";
+import { SCHEDULE_JSON_MAX_BYTES } from "./size.js";
 
 export interface ScheduleRunner {
   calculate(input: EngineProjectInputV1, signal?: AbortSignal): Promise<EngineScheduleResultV1>;
@@ -31,7 +32,10 @@ function record(value: unknown): value is Record<string, unknown> {
 function instant(value: unknown): value is string {
   return typeof value === "string" && isRfc3339Instant(value);
 }
-function validResult(value: unknown, input: EngineProjectInputV1): value is EngineScheduleResultV1 {
+export function isValidScheduleResult(
+  value: unknown,
+  input: EngineProjectInputV1,
+): value is EngineScheduleResultV1 {
   if (
     !record(value) ||
     value.schemaVersion !== 1 ||
@@ -102,8 +106,8 @@ export class ProcessScheduleRunner implements ScheduleRunner {
   constructor(options: ProcessScheduleRunnerOptions = {}) {
     this.binaryPath = options.binaryPath ?? process.env.ENGINEO_SCHEDULER_BIN ?? "engineo-schedule";
     this.timeoutMs = options.timeoutMs ?? 30_000;
-    this.maxInputBytes = options.maxInputBytes ?? 32 * 1024 * 1024;
-    this.maxOutputBytes = options.maxOutputBytes ?? 32 * 1024 * 1024;
+    this.maxInputBytes = options.maxInputBytes ?? SCHEDULE_JSON_MAX_BYTES;
+    this.maxOutputBytes = options.maxOutputBytes ?? SCHEDULE_JSON_MAX_BYTES;
     this.maxConcurrent = options.maxConcurrent ?? 2;
     for (const value of [
       this.timeoutMs,
@@ -264,7 +268,7 @@ export class ProcessScheduleRunner implements ScheduleRunner {
         }
         try {
           const result: unknown = JSON.parse(Buffer.concat(stdout).toString("utf8"));
-          if (!validResult(result, input)) throw new Error("Invalid result contract");
+          if (!isValidScheduleResult(result, input)) throw new Error("Invalid result contract");
           resolve(result);
         } catch {
           reject(

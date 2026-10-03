@@ -7,6 +7,7 @@ import {
   type EngineProjectInputV1,
   type EngineScheduleResultV1,
   type RelationshipInputV1,
+  type ScheduleCalculationV1,
   serializeScheduleInputV1,
   validateScheduleInputV1,
   WEEKDAYS,
@@ -23,7 +24,11 @@ type Project = {
   revision: number;
   updatedAt: string;
 };
-type Snapshot = { revision: number; input: EngineProjectInputV1 };
+type Snapshot = {
+  revision: number;
+  input: EngineProjectInputV1;
+  calculation?: ScheduleCalculationV1 | null;
+};
 type Permissions = { write: boolean; scheduleRun: boolean };
 type User = { id: string; email: string };
 type Recovery = { userId: string; organizationId: string; snapshot: Snapshot };
@@ -109,7 +114,7 @@ export default function Planner() {
     signal?.throwIfAborted();
     setSnapshot(loaded);
     setPermissions(detail.permissions);
-    setResult(null);
+    setResult(loaded.calculation?.result ?? null);
     setDirty(false);
     setConstraintActivity(loaded.input.activities[0]?.id ?? "");
     setCalendarId(loaded.input.project.defaultCalendarId);
@@ -148,6 +153,7 @@ export default function Planner() {
           const current = await openProject(selected, project, signal);
           if (draft && selected === draft.organizationId && current.permissions.write) {
             setSnapshot(draft.snapshot);
+            setResult(null);
             setDirty(true);
             setCalendarId(draft.snapshot.input.project.defaultCalendarId);
             setConstraintActivity(draft.snapshot.input.activities[0]?.id ?? "");

@@ -1,6 +1,11 @@
-import { ENGINE_CONTRACT_VERSION, type EngineProjectInputV1 } from "@engineo/contracts";
+import {
+  ENGINE_CONTRACT_VERSION,
+  type EngineProjectInputV1,
+  type ScheduleCalculationV1,
+} from "@engineo/contracts";
 import type { Database, DatabaseExecutor } from "../db/client.js";
 import type { TenantContext } from "../db/tenant-context.js";
+import { readLatestScheduleCalculation } from "./schedule-run-repository.js";
 
 export interface ProjectRecord {
   id: string;
@@ -24,6 +29,7 @@ export interface PlannerSnapshot {
   revision: number;
   input: EngineProjectInputV1;
   relationshipIds: string[];
+  calculation: ScheduleCalculationV1 | null;
 }
 
 export class ProjectRepository {
@@ -63,9 +69,10 @@ export class ProjectRepository {
   async plannerSnapshot(
     context: TenantContext,
     projectId: string,
+    includeCalculation = false,
   ): Promise<PlannerSnapshot | null> {
     return await this.db.begin("isolation level repeatable read read only", async (sql) =>
-      readPlannerSnapshot(sql, context, projectId),
+      readPlannerSnapshot(sql, context, projectId, includeCalculation),
     );
   }
 }
@@ -76,6 +83,7 @@ export async function readPlannerSnapshot(
   db: DatabaseExecutor,
   context: TenantContext,
   projectId: string,
+  includeCalculation = false,
 ): Promise<PlannerSnapshot | null> {
   const projectRows = await db<ProjectRow[]>`
       SELECT id, organization_id, name, code, description, revision FROM projects
@@ -185,5 +193,8 @@ export async function readPlannerSnapshot(
     revision: Number(project.revision),
     input,
     relationshipIds: relationshipRows.map((row) => String(row.id)),
+    calculation: includeCalculation
+      ? await readLatestScheduleCalculation(db, context, input, Number(project.revision))
+      : null,
   };
 }
