@@ -1,6 +1,8 @@
 "use client";
 
 import {
+  ACTIVITY_CSV_MAX_BYTES,
+  type ActivityCsvPreviewV1,
   type ActivityInputV1,
   type CalendarV1,
   ENGINE_TIME_ZONES,
@@ -38,7 +40,14 @@ type Snapshot = { revision: number; input: EngineProjectInputV1 };
 type Permissions = { write: boolean; scheduleRun: boolean };
 type User = { id: string; email: string };
 type Recovery = { userId: string; organizationId: string; snapshot: Snapshot };
-type Panel = "Activities" | "WBS" | "Relationships" | "Calendars" | "Constraints" | "Schedule";
+type Panel =
+  | "Activities"
+  | "WBS"
+  | "Relationships"
+  | "Calendars"
+  | "Constraints"
+  | "Schedule"
+  | "Import CSV";
 const panels: Panel[] = [
   "Activities",
   "WBS",
@@ -46,6 +55,7 @@ const panels: Panel[] = [
   "Calendars",
   "Constraints",
   "Schedule",
+  "Import CSV",
 ];
 const utcInput = (value: string) => new Date(value).toISOString().slice(0, 16);
 const utcInstant = (value: string) => `${value}:00Z`;
@@ -84,6 +94,10 @@ export default function Planner() {
   const [count, setCount] = useState(1);
   const [constraintActivity, setConstraintActivity] = useState("");
   const [calendarId, setCalendarId] = useState("");
+  const [csvFile, setCsvFile] = useState<{ name: string; text: string } | null>(null);
+  const [csvPreview, setCsvPreview] = useState<ActivityCsvPreviewV1 | null>(null);
+  const [csvPage, setCsvPage] = useState(0);
+  const csvPreviewRef = useRef<HTMLElement>(null);
   const input = snapshot?.input;
   const activitiesById = useMemo(
     () => new Map(input?.activities.map((activity) => [activity.id, activity]) ?? []),
@@ -109,6 +123,8 @@ export default function Planner() {
     setConstraintActivity("");
     setFilter("");
     setPanel("Activities");
+    setCsvFile(null);
+    setCsvPreview(null);
   }, []);
 
   const invalidateAccount = useCallback(
@@ -164,6 +180,8 @@ export default function Planner() {
     ]);
     signal?.throwIfAborted();
     setSnapshot(loaded);
+    setCsvFile(null);
+    setCsvPreview(null);
     setPermissions(detail.permissions);
     setResult(null);
     setDirty(false);
@@ -348,6 +366,9 @@ export default function Planner() {
     if (error) errorRef.current?.focus();
   }, [error]);
   useEffect(() => {
+    if (csvPreview) csvPreviewRef.current?.focus();
+  }, [csvPreview]);
+  useEffect(() => {
     if (!dirty && !hasRecovery) return;
     const warn = (event: BeforeUnloadEvent) => {
       event.preventDefault();
@@ -412,6 +433,7 @@ export default function Planner() {
       previous ? { ...previous, input: update(previous.input) } : previous,
     );
     setDirty(true);
+    setCsvPreview(null);
     setResult(null);
     setNotice("");
   }
@@ -816,6 +838,30 @@ export default function Planner() {
                   >
                     Export JSON
                   </button>
+                  <button
+                    type="button"
+                    disabled={Boolean(busy)}
+                    onClick={() =>
+                      void perform("Exporting activities", async (signal) => {
+                        if (dirty) throw new Error("Save your edits before exporting activities.");
+                        const csv = await api<string>(`${projectPath}/activities/export`, {
+                          signal,
+                          responseType: "text",
+                        });
+                        const href = URL.createObjectURL(
+                          new Blob([csv], { type: "text/csv;charset=utf-8" }),
+                        );
+                        const link = document.createElement("a");
+                        link.href = href;
+                        link.download = `engineo-${input.project.id}-activities.csv`;
+                        link.click();
+                        URL.revokeObjectURL(href);
+                        setNotice("Saved activities exported as CSV.");
+                      })
+                    }
+                  >
+                    Export activities CSV
+                  </button>
                   {permissions.write ? (
                     <button
                       type="button"
@@ -826,7 +872,9 @@ export default function Planner() {
                       {dirty ? "Save & recalculate" : "Recalculate"}
                     </button>
                   ) : null}
-                  {busy === "Saving and calculating" ? (
+                  {busy === "Saving and calculating" ||
+                  busy === "Previewing CSV" ||
+                  busy === "Applying CSV" ? (
                     <button type="button" onClick={() => operation.current?.abort()}>
                       Stop request
                     </button>
@@ -863,6 +911,202 @@ export default function Planner() {
                   </button>
                 ))}
               </nav>
+              {panel === "Import CSV" ? (
+                <section className="csvPanel" aria-label="Activity CSV import">
+                  <h2>Update activities from a spreadsheet</h2>
+                  <p>
+                    Export activities CSV, edit names, kinds, duration minutes, WBS IDs or calendar
+                    IDs, then select the file below. Keep project and activity IDs unchanged.
+                  </p>
+                  <p>
+                    Existing activities only. Omitted rows, constraints, relationships, calendars
+                    and project settings stay unchanged. Use JSON for a complete project export.
+                    UTF-8 CSV, up to 512 KiB and 10,000 rows per import.
+                  </p>
+                  {!permissions.write ? (
+                    <p>
+                      This project is read only. You can export activities; importing requires edit
+                      access.
+                    </p>
+                  ) : (
+                    <>
+                      {dirty ? (
+                        <p>Save or reload your unsaved edits before previewing an import.</p>
+                      ) : null}
+                      <label>
+                        Activity CSV file
+                        <input
+                          type="file"
+                          accept=".csv,text/csv"
+                          disabled={!editable || dirty}
+                          onChange={(event) => {
+                            const file = event.target.files?.[0];
+                            event.target.value = "";
+                            if (!file) return;
+                            void perform("Reading CSV", async (signal) => {
+                              setCsvFile(null);
+                              setCsvPreview(null);
+                              setCsvPage(0);
+                              if (file.size > ACTIVITY_CSV_MAX_BYTES)
+                                throw new Error("CSV exceeds the 512 KiB limit.");
+                              // Keep the BOM so the audit digest matches the original file bytes.
+                              const text = new TextDecoder("utf-8", {
+                                fatal: true,
+                                ignoreBOM: true,
+                              }).decode(await file.arrayBuffer());
+                              signal.throwIfAborted();
+                              setCsvFile({ name: file.name, text });
+                            });
+                          }}
+                        />
+                      </label>
+                      {csvFile ? <p>Selected: {csvFile.name}</p> : null}
+                      <button
+                        type="button"
+                        disabled={!editable || dirty || !csvFile}
+                        onClick={() => {
+                          if (!csvFile) return;
+                          void perform("Previewing CSV", async (signal) => {
+                            setCsvPreview(null);
+                            const preview = await api<ActivityCsvPreviewV1>(
+                              `${projectPath}/activities/import/preview`,
+                              {
+                                method: "POST",
+                                body: { csv: csvFile.text, expectedRevision: snapshot.revision },
+                                signal,
+                              },
+                            );
+                            setCsvPage(0);
+                            setCsvPreview(preview);
+                          });
+                        }}
+                      >
+                        Preview CSV changes
+                      </button>
+                      {csvPreview ? (
+                        <section aria-label="CSV import preview" tabIndex={-1} ref={csvPreviewRef}>
+                          <h3>Review before applying</h3>
+                          <p>
+                            {csvPreview.changedCount} changed · {csvPreview.unchangedCount}{" "}
+                            unchanged · {csvPreview.omittedCount} omitted and preserved · saved
+                            revision {csvPreview.expectedRevision}
+                          </p>
+                          {csvPreview.changedCount ? (
+                            <>
+                              <div className="csvChanges">
+                                <table>
+                                  <caption>
+                                    Changes {csvPage * 50 + 1}–
+                                    {Math.min((csvPage + 1) * 50, csvPreview.changedCount)} of{" "}
+                                    {csvPreview.changedCount}
+                                  </caption>
+                                  <thead>
+                                    <tr>
+                                      <th>Activity</th>
+                                      <th>Field</th>
+                                      <th>Saved value</th>
+                                      <th>Imported value</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {csvPreview.changes
+                                      .slice(csvPage * 50, (csvPage + 1) * 50)
+                                      .flatMap((change) =>
+                                        (
+                                          [
+                                            "name",
+                                            "kind",
+                                            "durationMinutes",
+                                            "wbsId",
+                                            "calendarId",
+                                          ] as const
+                                        )
+                                          .filter((key) => change.before[key] !== change.after[key])
+                                          .map((key) => (
+                                            <tr key={`${change.activityId}-${key}`}>
+                                              <td>
+                                                {change.before.name}
+                                                <small>{change.activityId}</small>
+                                              </td>
+                                              <td>{key}</td>
+                                              <td>{change.before[key]}</td>
+                                              <td>{change.after[key]}</td>
+                                            </tr>
+                                          )),
+                                      )}
+                                  </tbody>
+                                </table>
+                              </div>
+                              <div className="toolbarActions">
+                                <button
+                                  type="button"
+                                  disabled={csvPage === 0 || Boolean(busy)}
+                                  onClick={() => setCsvPage(csvPage - 1)}
+                                >
+                                  Previous changes
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={
+                                    (csvPage + 1) * 50 >= csvPreview.changedCount || Boolean(busy)
+                                  }
+                                  onClick={() => setCsvPage(csvPage + 1)}
+                                >
+                                  Next changes
+                                </button>
+                                <button
+                                  type="button"
+                                  className="primary"
+                                  disabled={!editable || dirty}
+                                  onClick={() => {
+                                    if (!csvFile) return;
+                                    void perform("Applying CSV", async (signal) => {
+                                      const applied = await api<{
+                                        revision: number;
+                                        changedCount: number;
+                                      }>(`${projectPath}/activities/import/apply`, {
+                                        method: "POST",
+                                        body: {
+                                          csv: csvFile.text,
+                                          expectedRevision: csvPreview.expectedRevision,
+                                          previewHash: csvPreview.previewHash,
+                                        },
+                                        signal,
+                                      });
+                                      setCsvFile(null);
+                                      setCsvPreview(null);
+                                      setResult(null);
+                                      await openProject(organizationId, input.project.id, signal);
+                                      await loadProjects(organizationId, signal);
+                                      setNotice(
+                                        `Imported ${applied.changedCount} activity changes at revision ${applied.revision}. Recalculate to update dates.`,
+                                      );
+                                    });
+                                  }}
+                                >
+                                  Apply CSV changes
+                                </button>
+                              </div>
+                            </>
+                          ) : (
+                            <p>No changes to apply.</p>
+                          )}
+                          <button
+                            type="button"
+                            disabled={Boolean(busy)}
+                            onClick={() => {
+                              setCsvPreview(null);
+                              setCsvFile(null);
+                            }}
+                          >
+                            Cancel CSV import
+                          </button>
+                        </section>
+                      ) : null}
+                    </>
+                  )}
+                </section>
+              ) : null}
               {panel === "Activities" ? (
                 <div className="panelBody">
                   <div className="activityTools">

@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
   type ActivityConstraintV1,
+  type ActivityCsvChangeV1,
   type ActivityKindV1,
   type CalendarV1,
   type EngineProjectInputV1,
@@ -412,6 +413,44 @@ export class PlannerRepository {
           ${input.project.requiredFinish}, ${input.project.defaultCalendarId},
           ${input.scheduleOptions.criticalFloatThresholdMinutes}, ${input.scheduleOptions.lagCalendarPolicy}, ${input.scheduleOptions.projectFinishPolicy})
       `;
+    });
+  }
+
+  async importActivities(
+    context: TenantContext,
+    projectId: string,
+    expectedRevision: number,
+    changes: ActivityCsvChangeV1[],
+    sourceHash: string,
+    rowCount: number,
+  ): Promise<number> {
+    return await this.bumpRevisionAndMutate(context, projectId, expectedRevision, async (sql) => {
+      await sql`
+        UPDATE activities AS a
+        SET name = c.name, kind = c.kind, duration_minutes = c."durationMinutes",
+            wbs_id = c."wbsId", calendar_id = c."calendarId"
+        FROM jsonb_to_recordset(${JSON.stringify(changes.map((change) => change.after))}::text::jsonb)
+          AS c(id uuid, name text, kind text, "durationMinutes" bigint, "wbsId" uuid, "calendarId" uuid)
+        WHERE a.id = c.id AND a.organization_id = ${context.organizationId} AND a.project_id = ${projectId}
+      `;
+      await appendAuditEvent(sql, {
+        organizationId: context.organizationId,
+        actorType: "user",
+        actorId: context.actorId,
+        action: "project.activities.import",
+        resourceType: "project",
+        resourceId: projectId,
+        source: "csv",
+        correlationId: context.correlationId,
+        payload: {
+          format: "engineo-activities-v1",
+          sourceHash,
+          rowCount,
+          changedCount: changes.length,
+          previousRevision: expectedRevision,
+          revision: expectedRevision + 1,
+        },
+      });
     });
   }
 

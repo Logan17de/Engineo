@@ -82,6 +82,7 @@ export async function api<T>(
     body?: unknown;
     signal?: AbortSignal | undefined;
     sessionBound?: boolean;
+    responseType?: "json" | "text";
   } = {},
 ): Promise<T> {
   const method = options.method ?? "GET";
@@ -138,7 +139,13 @@ export async function api<T>(
   }
   options.signal?.throwIfAborted();
   if (response.status === 204) return undefined as T;
-  const data = (await response.json()) as T;
+  const data = (
+    options.responseType === "text"
+      ? new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(
+          await response.arrayBuffer(),
+        )
+      : await response.json()
+  ) as T;
   assertCurrent();
   options.signal?.throwIfAborted();
   return data;

@@ -34,7 +34,7 @@ and add an evidence record under `docs/verification/` with each reviewed increme
 | S0 Rust analysis coverage | Security query gates and extraction completeness are separate acceptance checks | PR #56 `0f18291` query gates passed, but Rust extraction still reports 17 clean files and 2 with errors. Separate compiler-compatibility and fail-closed inventory gate implemented/tested locally; exact-head extraction remains pending: [coverage record](verification/2026-10-03-rust-security.md) |
 | M1 identity | Org/project creation, sessions/revocation/CSRF/Origin, server RBAC, audit, abuse controls and negative cross-tenant tests | auth/API and scoped browser negatives pass: [auth](verification/2026-10-02-auth.md), [API](verification/2026-10-02-planner-api.md), [browser](verification/2026-10-02-planner-browser.md); full identity administration/role matrix and production controls pending |
 | M1 Planner | WBS CRUD/restructure, virtualized grid and synchronized Gantt, relationships/calendars/constraints, schedule controls, 1k+ activities created/edited/recalculated in browser | scoped browser increment passed: [execution record](verification/2026-10-02-planner-browser.md); durable results, full latency characterization and remaining workflow exits pending |
-| M1 data/workflow | Data date + basic progress, filters/group/sort/saved views, project summary, CSV/spreadsheet import/export, explicit failures, data ownership | pending |
+| M1 data/workflow | Data date + basic progress, filters/group/sort/saved views, project summary, CSV/spreadsheet import/export, explicit failures, data ownership | activity CSV export + existing-activity preview/apply passed locally, including 1,000 edits, preservation, audit/tenant/replay/failure checks: [CSV record](verification/2026-10-03-activity-csv.md); WBS/relationship/new-activity import templates, native XLSX, remaining progress/views and complete #51 acceptance pending |
 | S1 production controls | Encrypted transport/storage and secret-store integration; automated encrypted backups; measured restore; project authorization and audit | never run operationally; no production credentials or infrastructure |
 | M2 controls | Immutable baselines/variance; richer constraints; suspend/resume, actual/remaining and out-of-sequence policies; longest/multiple paths; diagnostics/date reasons; codes/custom fields | pending |
 | M2 workflow/interchange | Auditable bulk preview/apply, isolated scenarios, network view, look-aheads/layouts/reports; adapter framework and first professional format with round-trip fixtures | pending |
@@ -81,6 +81,11 @@ SHA, diff, executed/failed/skipped checks and CI/security state before PM review
 merge only after that review. Continue independent implementation while waiting.
 
 ## Current review stack
+
+- `feat/planner-csv-roundtrip` follows PR #57 at `c8bd175875b4514d65549814fd56b5c2d461338e`.
+  Scoped #51 activity CSV preview/apply passes local API and browser validation;
+  exact publication SHA, CI and security results belong to its draft PR. This
+  increment does not complete #51 or M1 and does not merge the existing stack.
 
 - Draft PR #54: `de1b88f9efbccb1e536f625fbb99cb2a6e1a88fc`, scoped auth
   follow-up; CI and CodeQL passed, dependency-review setting blocker remains.
