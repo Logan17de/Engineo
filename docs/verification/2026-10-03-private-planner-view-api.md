@@ -212,3 +212,32 @@ build drift was captured and restored before those comparisons.
 Fresh draft-head CI, CodeQL, Dependency Review and independent PM approval are
 required before any API merge. Browser saved-view acceptance, GUI/CLI integration,
 physical retention/capacity and operational release gates remain pending.
+
+## Clean-runtime test ordering correction
+
+The initial draft head `e2924636f82e99a4ae8e5379a7fa340cccda0e16` failed CI
+`37139842192`, TypeScript job `111251803631`, in Quality checks. Eighteen private
+view groups could not import compiled `apps/api/dist/db/migrate.js`; the compiled
+production logger child also failed. HTTP, TLS, dependency audit and browser steps
+were skipped and are not passing evidence. The initial local integration already
+had emitted runtime, so it did not establish clean-checkout ordering. Its successful
+checks remain scoped historical evidence, not a substitute for the failed CI.
+
+The explicit API test command now builds its contracts dependency and production
+API runtime before executing the unchanged tests. Compiled migration and production
+logger assertions remain intact. A separate fresh tracked-only worktree had no API,
+contracts or CLI `dist` output after normal frozen installation or immediately
+before `pnpm check`; no provisional build or migration preceded the aggregate.
+That run passed from 17:28:02 to 17:29:54 UTC: 115 contracts, 311 genuine-DB API,
+107 existing CLI, 127 scripts and 51 active Rust tests, with zero TypeScript/database
+skips and the preexisting ignored manual Rust benchmark. All builds, postbuild
+types/format, 27 focused SQL, 59 built HTTP and 15 built TLS checks passed. All 51
+existing browser cases collected only. Production migration replay, source/runtime/
+engine hashes and original database ledger/inventory guards matched, and the
+wrapper stopped PostgreSQL at 17:30:21 UTC.
+
+Independent review also identified an unresolved counter/maintenance transition
+authority concern in migration 0007. Earlier direct-DML and forged-setting tests
+did not establish that diagnostic context was an unforgeable authority. That
+structural correction and new real-database regressions are separate ongoing work.
+This build-order correction does not resolve that concern or approve an API merge.

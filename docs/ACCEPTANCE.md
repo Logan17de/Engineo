@@ -128,12 +128,16 @@ revision/CAS, stateless preview/apply, bounded receipts/storage/rates/maintenanc
 and a finite append-only feature audit-admission ceiling are in this API scope.
 GUI controls/keyboard/focus/virtualization, application CLI views commands,
 actual GUI/headless parity, exact-head aggregate CI/security/PM review and physical
-operational capacity remain pending. Fresh integrated local gates pass 115
+operational capacity remain pending. Fresh clean-runtime integrated local gates pass 115
 contracts / 311 genuine-DB API / 107 existing CLI / 127 scripts / 59 built HTTP /
 15 built TLS / 51 active Rust tests. Source/runtime/engine, original migration
-ledger and database inventory guards match. The unchanged 51 browser cases were
-collected locally, not executed against this API candidate. Draft publication and
-exact-head remote gates do not themselves establish saved-view/M1/release acceptance.
+ledger and database inventory guards match. Initial draft CI failed before the
+HTTP/TLS/audit/browser steps because API runtime emission followed the test phase;
+an explicit dependency/API build before unchanged tests passes the new clean-checkout
+local run. The independent counter/maintenance authority finding remains under
+structural correction. The unchanged 51 browser cases were collected locally, not
+executed against this API candidate. Draft publication and exact-head remote gates
+do not themselves establish saved-view/M1/release acceptance.
 
 ## Historical baseline — 2026-10-02
 
