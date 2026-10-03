@@ -314,6 +314,16 @@ async function login(page: Page, data: Fixture, account = data.owner) {
   await expect(page.locator(".account")).toContainText(account.email);
   await expect(page.getByRole("button", { name: "Sign out", exact: true })).toBeEnabled();
 }
+async function expectSavedSummary(page: Page, data: Fixture, revision: number, name: string) {
+  const card = page.locator(`.projectCard[data-project-id="${data.project}"]`);
+  await expect(card).toHaveClass(/selectedProject/);
+  await expect(card.locator("strong")).toHaveText(name);
+  await expect(card.locator(".projectCode")).toHaveText("CLI-KEEP-CODE");
+  await expect(card.locator("span").last()).toHaveText(`Revision ${revision}`);
+  await expect(page.locator(".revisionBadge")).toContainText(
+    new RegExp(`^Revision ${revision}(?!\\d)`),
+  );
+}
 async function current(cli: PrivateCli, data: Fixture, auth: Auth) {
   const value = success<ProjectConfigurationReadV1>(await cli.run("read", data, auth));
   expect(validateProjectConfigurationReadV1(value)).toBe(true);
@@ -650,6 +660,10 @@ test("built CLI exports, validates, reviews, applies/replays and calculates 1,00
     serializeScheduleResultV1(nativeResult),
   );
   expect(result.calculation?.resultHashSha256).toBe(hash(serializeScheduleResultV1(nativeResult)));
+  // Refresh inside the mounted Planner first. A full page reload below also
+  // reloads the project list and would otherwise conceal a stale cached card.
+  await page.getByRole("button", { name: "Reload saved version", exact: true }).click();
+  await expectSavedSummary(page, data, committed.revision, desired.input.project.name);
   const gui = await guiReload(page, data);
   expect(gui.snapshot.revision).toBe(committed.revision);
   expect(gui.detail.project).toMatchObject({
@@ -672,6 +686,7 @@ test("built CLI exports, validates, reviews, applies/replays and calculates 1,00
   ).toBeVisible();
   await expect(page.locator(".revisionBadge")).toContainText(`Revision ${committed.revision}`);
   await expect(page.locator(".revisionBadge")).not.toContainText("Unsaved edits");
+  await expectSavedSummary(page, data, committed.revision, desired.input.project.name);
   await expect(page.getByRole("textbox", { name: "Activity 1 name", exact: true })).toHaveValue(
     first.name,
   );
@@ -753,15 +768,28 @@ test("saved CLI review loses to a newer GUI save and stale GUI draft cannot over
   const guiSaved = await current(cli, data, auth);
   expect(guiSaved.revision).toBe(initial.revision + 1);
   expect(guiSaved.configuration.input.activities[0]?.name).toBe("GUI committed first");
+  await expectSavedSummary(
+    page,
+    data,
+    guiSaved.revision,
+    guiSaved.configuration.input.project.name,
+  );
   await page
     .getByRole("textbox", { name: "Activity 1 name", exact: true })
     .fill("Unsaved stale GUI draft");
   const next = structuredClone(guiSaved.configuration);
+  next.input.project.name = "CLI renamed the saved project";
   const nextActivity = next.input.activities[0];
   if (!nextActivity) throw new Error("Missing persisted activity");
   nextActivity.name = "CLI committed second";
   const reviewed = await plan(cli, data, auth, info, next, guiSaved.revision, "cli-newer");
   const receipt = await apply(cli, data, auth, reviewed);
+  await expectSavedSummary(
+    page,
+    data,
+    guiSaved.revision,
+    guiSaved.configuration.input.project.name,
+  );
   const save = page.waitForResponse(
     (response) =>
       new URL(response.url()).pathname === `${projectPath(data)}/schedule` &&
@@ -778,6 +806,12 @@ test("saved CLI review loses to a newer GUI save and stale GUI draft cannot over
     "Unsaved stale GUI draft",
   );
   await expect(page.locator(".revisionBadge")).toContainText("Unsaved edits");
+  await expectSavedSummary(
+    page,
+    data,
+    guiSaved.revision,
+    guiSaved.configuration.input.project.name,
+  );
   await expect(page.locator(".ganttBar")).toHaveCount(0);
   const committed = await current(cli, data, auth);
   expect(committed.revision).toBe(initial.revision + 2);
@@ -800,6 +834,12 @@ test("saved CLI review loses to a newer GUI save and stale GUI draft cannot over
   );
   await expect(page.locator(".revisionBadge")).toContainText(`Revision ${committed.revision}`);
   await expect(page.locator(".revisionBadge")).not.toContainText("Unsaved edits");
+  await expectSavedSummary(
+    page,
+    data,
+    committed.revision,
+    committed.configuration.input.project.name,
+  );
   await evidence(page, info, cli, "cli-gui-stale-authoritative-reload", {
     configuration: committed,
     receipt,
@@ -846,6 +886,7 @@ test("built CLI cancellation/replay preserves GUI revision and its saved real Ru
   );
   const after = await current(cli, data, auth);
   expect(after).toEqual(initial);
+  await expectSavedSummary(page, data, initial.revision, initial.configuration.input.project.name);
   const result = success<Calculation>(
     await cli.run("result", data, auth, ["--expected-revision", String(initial.revision)]),
   );
@@ -856,6 +897,7 @@ test("built CLI cancellation/replay preserves GUI revision and its saved real Ru
   });
   const gui = await guiReload(page, data);
   expect(gui.snapshot.revision).toBe(initial.revision);
+  await expectSavedSummary(page, data, initial.revision, initial.configuration.input.project.name);
   expect(gui.calculation).toEqual(result);
   await expect(page.getByRole("textbox", { name: "Activity 1 name", exact: true })).toHaveValue(
     "Seed CLI activity 1",

@@ -11,6 +11,32 @@ and add an evidence record under `docs/verification/` with each reviewed increme
 
 ## Reconciled main — 2026-10-03
 
+- Configuration API PR #64 merged at
+  `a9d67cdfb24c4fe4848f109b699de63296127ae8`, reviewed tree
+  `c9e637ee9cbc83f639e9e6b4d658c331d1e282b9`. Fresh actual-main CI
+  `37119397845` and CodeQL `37119397836` passed: 44 browser / 41 contract /
+  184 genuine-DB API / 27 script / 51 active Rust tests, including the declared
+  minimum compiler. All eight browser images and nine sanitized records were
+  inspected; input/result hashes, native order, permissions and audited outcomes
+  matched. The separately populated 21-table restore drill remains scoped
+  disposable-database evidence, not production backup acceptance.
+- Application CLI PR #65 merged at
+  `e83e399660fa21efe832de11f9ae601c9abca8cd`, independently approved head
+  `9a5fe2d575939e81cfc93b6d4395fe1c782538a8`, tree
+  `bcd03d7ea8cfd0972b57f5f8b2c6828fbfde68e6`. Corrected-head CI
+  `37124288261`, CodeQL `37124288264` and Dependency Review `37124288276`
+  passed before the guarded merge. Fresh actual-main CI `37126065271` and
+  CodeQL `37126065280` then passed: 48 browser / 41 contract / 107 CLI unit /
+  184 genuine-DB API / 127 script / 59 built HTTP / 15 built TLS tests, and
+  51 active Rust tests on both compilers. All six job checkout SHAs and the
+  digest-matched browser/SARIF artifacts were verified; all eight CLI images
+  and six sanitized evidence records were inspected. The real Rust hash/native
+  ordering/millisecond parity and stale, cancel, replay and identity outcomes
+  passed. Rust extraction covers all 21 tracked files with zero errors; query
+  reports contain no high/error findings. Original-head browser and CodeQL
+  failures are retained historical failures, not successful evidence. The CLI
+  scope is accepted; full M1, stable automation identities and operational
+  release acceptance remain incomplete.
 - Foundation integration PR #60 merged atomically at
   `b36ecc4d9483b925583bbf9a673c0040436a63e1`; tree
   `f626302e6bf0ffa68e55c6d060c0ca62b3bdddee` matches independently reviewed
@@ -79,11 +105,11 @@ and add an evidence record under `docs/verification/` with each reviewed increme
 | M0 scheduling | Domain and versioned JSON; graph/cycles; work calendars/DST; FS/SS/FF/SF + lag; early/late dates; float; milestones/constraints; controlling path; deterministic golden/property fixtures | existing Rust tests and reviewed JSON bridge pass; signed numeric lag boundaries do not guarantee a calendar/date can calculate extreme durations |
 | M0 scale | Document sparse/dense 1k/10k/100k runs with SHA, compiler, CPU, memory, build profile, counts and timings | passed: [measured scale record](verification/2026-10-02-m0-performance.md); RSS and repeated reference-machine budgets pending |
 | S0 supply chain | JS/Rust lockfiles, frozen/locked installs, high vulnerability gates, build-script policy, minimal CI permissions, threat model, no secrets, dependency review | frozen/locked inputs and CI/CodeQL pass; Dependency Graph enabled and full accumulated main-diff Dependency Review passes on integration #60, run `37102353955`; every new head still requires its own gates |
-| S0 Rust analysis coverage | Security query gates and extraction completeness are separate acceptance checks | actual durable main `586efb44` CodeQL `37110281436` passes 21 clean / zero errors / 21 individually matched tracked sources, empty findings and successful diagnostic-free invocations; prior foundation's 19-file evidence is historical. Every revised head requires fresh coverage: [coverage record](verification/2026-10-03-rust-security.md) |
+| S0 Rust analysis coverage | Security query gates and extraction completeness are separate acceptance checks | actual CLI main `e83e3996` CodeQL `37126065280` passes 21 clean / zero errors / 21 individually matched tracked sources, empty high/error findings and successful invocations without extraction warnings/errors; informational SARIF notes remain. Prior foundation's 19-file evidence is historical. Every revised head requires fresh coverage: [coverage record](verification/2026-10-03-rust-security.md) |
 | M1 identity | Org/project creation, sessions/revocation/CSRF/Origin, server RBAC, audit, abuse controls and negative cross-tenant tests | auth/API and scoped browser negatives pass: [auth](verification/2026-10-02-auth.md), [API](verification/2026-10-02-planner-api.md), [browser](verification/2026-10-02-planner-browser.md); full identity administration/role matrix and production controls pending |
 | M1 Planner | WBS CRUD/restructure, virtualized grid and synchronized Gantt, relationships/calendars/constraints, schedule controls, 1k+ activities created/edited/recalculated in browser | scoped foundation and durable completed-result/reload/retry increments passed review plus fresh actual-main 41-case browser/API/static/Rust/security gates: [durable record](verification/2026-10-03-durable-calculation-ui.md); full latency characterization, progress/views and remaining workflow exits pending |
 | M1 data/workflow | Data date + basic progress, filters/group/sort/saved views, project summary, CSV/spreadsheet import/export, explicit failures, data ownership | activity CSV export + existing-activity preview/apply passed locally, including 1,000 edits, preservation, audit/tenant/replay/failure checks: [CSV record](verification/2026-10-03-activity-csv.md); WBS/relationship/new-activity import templates, native XLSX, remaining progress/views and complete #51 acceptance pending |
-| M1 GUI/headless automation | Documented application API/CLI, machine-readable I/O, versioned project configuration and validate/plan/apply with GUI-equivalent auth/RBAC/audit/revision/idempotency | graphical Planner and engine JSON CLI exist; HTTP/CSV/durable-result foundations pass scoped checks. Separate existing-project configuration API/plan/receipt implementation is underway from reviewed main, followed by thin application CLI; no acceptance inferred before exact-head and built-service/GUI parity tests: [headless acceptance](specs/headless-automation-v1.md), [configuration contract](specs/project-configuration-v1.md). Stable scoped automation identities remain pending; no Terraform provider assumed necessary |
+| M1 GUI/headless automation | Documented application API/CLI, machine-readable I/O, versioned project configuration and validate/plan/apply with GUI-equivalent auth/RBAC/audit/revision/idempotency | reviewed configuration API #64 and built application CLI #65 are merged with fresh actual-main checks above. Existing-project versioned schedule read/validate/plan/apply/cancel/status/receipt and calculate/result pass genuine API/GUI/Rust parity, including 1,000 activities, native order and exact milliseconds: [headless acceptance](specs/headless-automation-v1.md), [configuration contract](specs/project-configuration-v1.md), [CLI](../packages/cli/README.md). New M1 features still need the same GUI/headless coverage. Stable scoped automation identities, Windows and external deployment acceptance remain pending; no Terraform provider assumed necessary |
 | S1 production controls | Encrypted transport/storage and secret-store integration; automated encrypted backups; measured restore; project authorization and audit | populated disposable PostgreSQL 17.11 drills pass: prior durable calculation [record](verification/2026-10-03-durable-calculation-ui.md) and new configuration schema [record](verification/2026-10-03-project-configuration-restore.md), 21 tables / 2,045 exact rows / 1,000 activities / 999 relationships, restored authenticated receipts/replay/pending apply and bounded 64→1→0 maintenance; encrypted automated production backup, scoped identity, production RPO/RTO and infrastructure remain never run |
 | M2 controls | Immutable baselines/variance; richer constraints; suspend/resume, actual/remaining and out-of-sequence policies; longest/multiple paths; diagnostics/date reasons; codes/custom fields | pending |
 | M2 workflow/interchange | Auditable bulk preview/apply, isolated scenarios, network view, look-aheads/layouts/reports; adapter framework and first professional format with round-trip fixtures | pending |
@@ -116,6 +142,13 @@ inputs and Rust calculated output. Mark skipped tests **never run**, not passed.
   versioned binaries/contracts, bounded jobs with interruption/retry and quotas.
 - CPU/RSS/API/browser latency measurements on named hardware; no universal
   threshold invented from a single run.
+- Application CLI acceptance on Windows and a separately approved externally
+  hosted HTTPS deployment. Current built TLS tests use an isolated ephemeral
+  local CA/process and do not establish production transport or trust setup.
+- Configuration artifact quota/retention stress, maintenance contention and
+  physical PostgreSQL/index/WAL growth characterization. Logical byte/count
+  admission and a bounded disposable maintenance drill do not establish finite
+  audit-history lifecycle or production capacity.
 - Proxy/egress and hostile import regression suites; security/static/dependency
   gates pass on the exact reviewed SHA. A green CodeQL workflow alone does not
   prove there are no findings.
@@ -131,12 +164,17 @@ merge only after that review. Continue independent implementation while waiting.
 
 ## Current review stack
 
-- `feat/headless-project-configuration` is the next separate implementation
-  from reviewed actual main `586efb44`. Versioned validation/complete review,
-  identity-preserving apply, durable scoped plans/receipts and session/RBAC parity
-  are not accepted merely because the contract or code exists. Application CLI
-  and socket/GUI parity evidence follow separately. No real identity/access or
-  deployment is provisioned by implementation.
+- `fix/production-invariant-summary` is a separate follow-up from reviewed
+  actual main `e83e3996`: immutable forward migration `0006`, direct-array
+  prototype validation, exact BIGINT native append-order/rollback regressions,
+  and confirmed project-card/editor metadata synchronization. Original branches
+  remain preserved. Fresh combined checks and exact-head remote browser/security
+  review are required before its scoped acceptance.
+- `feat/headless-project-configuration` and `feat/headless-application-cli` are
+  preserved after independently reviewed merges #64 and #65. Their original
+  verification sections describe historical local candidates; successful fresh
+  committed-head and actual-main results are recorded above. No real identity,
+  access or deployment was provisioned by those implementations.
 - `feat/durable-calculation-recovery` is preserved at reviewed `7f1cb07e` and
   integrated through merged PR #63, with green actual-main checks above. Its
   newly reconstructed code did not recover the unavailable unpublished checkpoint.

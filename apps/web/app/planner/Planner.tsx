@@ -178,55 +178,70 @@ export default function Planner() {
     signal?.throwIfAborted();
     setProjects(data.projects);
   }, []);
-  const openProject = useCallback(async (org: string, id: string, signal?: AbortSignal) => {
-    const path = `/organizations/${org}/projects/${id}`;
-    let resultReadError: string | null = null;
-    const [loaded, detail, saved] = await Promise.all([
-      api<Snapshot>(`${path}/schedule`, { signal }),
-      api<{ permissions: Permissions }>(path, { signal }),
-      api<CalculationSnapshot>(`${path}/schedule/result`, { signal }).catch((error) => {
-        if (
-          signal?.aborted ||
-          (error instanceof ApiError && [401, 403, 404, 409].includes(error.status))
-        )
-          throw error;
-        if (error instanceof ApiError && error.code.startsWith("schedule_"))
-          resultReadError = error.message;
-        // A transient optional result-read failure does not hide the saved plan.
-        return null;
-      }),
-    ]);
-    const matched = saved ? await matchesStoredCalculation(saved, loaded) : false;
-    signal?.throwIfAborted();
-    if (sessionCookieChanged())
-      throw new ApiError(409, "session_changed", "Your sign-in changed. Sign in again.");
-    setSnapshot(loaded);
-    setCsvFile(null);
-    setCsvPreview(null);
-    setPermissions(detail.permissions);
-    setResult(matched && saved ? saved.result : null);
-    setCalculation(matched && saved ? saved.calculation : null);
-    if (resultReadError) setError(resultReadError);
-    if (!saved)
-      setNotice("Saved calculation could not be loaded. Reload the saved version to try again.");
-    else if (saved.revision !== loaded.revision)
-      setNotice("The project changed while loading its calculation. Reload the saved version.");
-    else if ((saved.result || saved.calculation) && !matched)
-      setNotice(
-        "Saved calculation could not be verified. Reload or recalculate before using dates.",
-      );
-    else if (matched && saved.result)
-      setNotice(
-        `Saved calculation restored · finish ${displayInstant(saved.result.projectFinish)} UTC`,
-      );
-    setDirty(false);
-    setConstraintActivity(loaded.input.activities[0]?.id ?? "");
-    setCalendarId(loaded.input.project.defaultCalendarId);
-    setPanel("Activities");
-    setFilter("");
-    window.history.replaceState(null, "", `/?organization=${org}&project=${id}`);
-    return { loaded, permissions: detail.permissions };
+  const acceptSavedSnapshot = useCallback((saved: Snapshot) => {
+    // Only confirmed loads/commits reach this path. Draft changes and recovery
+    // must not overwrite the cached saved project name or revision.
+    setSnapshot(saved);
+    setProjects((previous) =>
+      previous.map((project) =>
+        project.id === saved.input.project.id
+          ? { ...project, name: saved.input.project.name, revision: saved.revision }
+          : project,
+      ),
+    );
   }, []);
+  const openProject = useCallback(
+    async (org: string, id: string, signal?: AbortSignal) => {
+      const path = `/organizations/${org}/projects/${id}`;
+      let resultReadError: string | null = null;
+      const [loaded, detail, saved] = await Promise.all([
+        api<Snapshot>(`${path}/schedule`, { signal }),
+        api<{ permissions: Permissions }>(path, { signal }),
+        api<CalculationSnapshot>(`${path}/schedule/result`, { signal }).catch((error) => {
+          if (
+            signal?.aborted ||
+            (error instanceof ApiError && [401, 403, 404, 409].includes(error.status))
+          )
+            throw error;
+          if (error instanceof ApiError && error.code.startsWith("schedule_"))
+            resultReadError = error.message;
+          // A transient optional result-read failure does not hide the saved plan.
+          return null;
+        }),
+      ]);
+      const matched = saved ? await matchesStoredCalculation(saved, loaded) : false;
+      signal?.throwIfAborted();
+      if (sessionCookieChanged())
+        throw new ApiError(409, "session_changed", "Your sign-in changed. Sign in again.");
+      acceptSavedSnapshot(loaded);
+      setCsvFile(null);
+      setCsvPreview(null);
+      setPermissions(detail.permissions);
+      setResult(matched && saved ? saved.result : null);
+      setCalculation(matched && saved ? saved.calculation : null);
+      if (resultReadError) setError(resultReadError);
+      if (!saved)
+        setNotice("Saved calculation could not be loaded. Reload the saved version to try again.");
+      else if (saved.revision !== loaded.revision)
+        setNotice("The project changed while loading its calculation. Reload the saved version.");
+      else if ((saved.result || saved.calculation) && !matched)
+        setNotice(
+          "Saved calculation could not be verified. Reload or recalculate before using dates.",
+        );
+      else if (matched && saved.result)
+        setNotice(
+          `Saved calculation restored · finish ${displayInstant(saved.result.projectFinish)} UTC`,
+        );
+      setDirty(false);
+      setConstraintActivity(loaded.input.activities[0]?.id ?? "");
+      setCalendarId(loaded.input.project.defaultCalendarId);
+      setPanel("Activities");
+      setFilter("");
+      window.history.replaceState(null, "", `/?organization=${org}&project=${id}`);
+      return { loaded, permissions: detail.permissions };
+    },
+    [acceptSavedSnapshot],
+  );
   const initialize = useCallback(
     async (signal?: AbortSignal) => {
       const me = await api<{ user: User; session: { id: string } }>("/auth/me", {
@@ -597,11 +612,10 @@ export default function Planner() {
           signal,
         });
         revision = saved.revision;
-        setSnapshot({ ...snapshot, revision });
+        acceptSavedSnapshot({ ...snapshot, revision });
         setDirty(false);
         operationDraft.current = null;
         setNotice("Edits saved.");
-        await loadProjects(organizationId, signal);
       }
       // Always refresh before calculation, including retries after a confirmed
       // save whose response normalization/read was interrupted. v1 timestamps
@@ -612,7 +626,7 @@ export default function Planner() {
         throw new Error(
           "The project changed after saving. Reload the saved version before recalculating.",
         );
-      setSnapshot(current);
+      acceptSavedSnapshot(current);
       if (permissions.scheduleRun) await calculate(signal, revision, current.input);
     });
   }
@@ -1220,7 +1234,6 @@ export default function Planner() {
                                       setResult(null);
                                       setCalculation(null);
                                       await openProject(organizationId, input.project.id, signal);
-                                      await loadProjects(organizationId, signal);
                                       setNotice(
                                         `Imported ${applied.changedCount} activity changes at revision ${applied.revision}. Recalculate to update dates.`,
                                       );

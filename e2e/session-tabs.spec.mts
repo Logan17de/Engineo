@@ -101,6 +101,15 @@ async function cleared(page: Page) {
   await expect(page.locator(".plannerPanel")).toHaveCount(0);
   await expect(page.getByText(/unsaved edits are kept in this tab/)).toHaveCount(0);
 }
+async function expectSavedSummary(page: Page, data: Fixture, revision: number, name: string) {
+  const card = page.locator(`.projectCard[data-project-id="${data.project}"]`);
+  await expect(card).toHaveClass(/selectedProject/);
+  await expect(card.locator("strong")).toHaveText(name);
+  await expect(card.locator("span").last()).toHaveText(`Revision ${revision}`);
+  await expect(page.locator(".revisionBadge")).toContainText(
+    new RegExp(`^Revision ${revision}(?!\\d)`),
+  );
+}
 async function headers(page: Page, sessionId: string) {
   const csrf = (await page.context().cookies()).find((cookie) => cookie.name === "engineo_csrf");
   expect(csrf).toBeDefined();
@@ -252,6 +261,11 @@ test("a delayed committed save cannot calculate or repopulate A's tab using B's 
     delivered = true;
   });
   try {
+    await page.getByRole("button", { name: "Schedule", exact: true }).click();
+    await page
+      .getByRole("textbox", { name: "Project name", exact: true })
+      .fill("A's committed private project name");
+    await page.getByRole("button", { name: "Activities", exact: true }).click();
     await page
       .getByRole("textbox", { name: "Activity 1 name", exact: true })
       .fill("A committed before switch");
@@ -263,12 +277,23 @@ test("a delayed committed save cannot calculate or repopulate A's tab using B's 
     await expect.poll(() => delivered).toBe(true);
     await page.bringToFront();
     await cleared(page);
+    await expect(page.getByText("A's committed private project name", { exact: true })).toHaveCount(
+      0,
+    );
     expect(runs).toBe(0);
     const current = await other.request.get(`${path(data)}/schedule`);
     expect(current.status()).toBe(200);
     const persisted = (await current.json()) as { revision: number; input: EngineProjectInputV1 };
     expect(persisted.revision).toBe(data.revision + 1);
     expect(persisted.input.activities[0]?.name).toBe("A committed before switch");
+    expect(persisted.input.project.name).toBe("A's committed private project name");
+    await other
+      .getByRole("combobox", { name: "Organization", exact: true })
+      .selectOption(data.organization);
+    await other.locator(`.projectCard[data-project-id="${data.project}"]`).click();
+    await expectSavedSummary(other, data, persisted.revision, persisted.input.project.name);
+    await expect(other.locator(".account")).toContainText(data.b.email);
+    await expect(page.locator(".projectCard")).toHaveCount(0);
     const audits =
       await db`SELECT actor_id FROM audit_events WHERE organization_id=${data.organization} AND resource_id=${data.project} AND action='project.schedule.edit'`;
     expect(audits).toHaveLength(2);
@@ -331,6 +356,77 @@ test("explicit sign out after session expiry permanently discards the accepted d
   await expect(page.getByRole("textbox", { name: "Activity 1 name", exact: true })).toHaveValue(
     "Original saved activity",
   );
+  await expect(page.locator(".revisionBadge")).not.toContainText("Unsaved edits");
+});
+
+test("same-account recovery keeps the authoritative card while a stale draft retains its old base revision", async ({
+  page,
+}) => {
+  const data = await fixture();
+  const session = await open(page, data);
+  await expectSavedSummary(page, data, data.revision, data.input.project.name);
+  await page.getByRole("button", { name: "Schedule", exact: true }).click();
+  await page
+    .getByRole("textbox", { name: "Project name", exact: true })
+    .fill("Escrowed unsaved project name");
+  await page.getByRole("button", { name: "Activities", exact: true }).click();
+  await page
+    .getByRole("textbox", { name: "Activity 1 name", exact: true })
+    .fill("Escrowed stale activity");
+  await db`UPDATE auth_sessions SET revoked_at=now() WHERE id=${session}`;
+  await page.getByRole("button", { name: "Save & recalculate", exact: true }).click();
+  await expect(page.getByText(/unsaved edits are kept in this tab/)).toBeVisible();
+  await expect(page.locator(".projectCard")).toHaveCount(0);
+
+  const external = structuredClone(data.input);
+  external.project.name = "Externally saved project name";
+  const activity = external.activities[0];
+  if (!activity) throw new Error("Missing recovery fixture activity");
+  activity.name = "Externally saved activity";
+  const revision = await new PlannerRepository(db).replaceSchedule(
+    tenantContext(data.organization, data.a.id, "multi-tab-recovery-external-save"),
+    data.project,
+    data.revision,
+    external,
+  );
+  expect(revision).toBe(data.revision + 1);
+  await login(page, data.a);
+  const card = page.locator(`.projectCard[data-project-id="${data.project}"]`);
+  const expectRecoveredDraft = async () => {
+    await expect(page.getByRole("textbox", { name: "Activity 1 name", exact: true })).toHaveValue(
+      "Escrowed stale activity",
+    );
+    await expect(
+      page.getByRole("heading", { name: "Escrowed unsaved project name", exact: true }),
+    ).toBeVisible();
+    await expect(page.locator(".revisionBadge")).toContainText(
+      new RegExp(`^Revision ${data.revision}(?!\\d)`),
+    );
+    await expect(page.locator(".revisionBadge")).toContainText("Unsaved edits");
+    await expect(card.locator("strong")).toHaveText(external.project.name);
+    await expect(card.locator("span").last()).toHaveText(`Revision ${revision}`);
+  };
+  await expectRecoveredDraft();
+  const read = await page.request.get(`${path(data)}/schedule`);
+  expect(read.status()).toBe(200);
+  const persisted = (await read.json()) as { revision: number; input: EngineProjectInputV1 };
+  expect(persisted.revision).toBe(revision);
+  expect(persisted.input.project.name).toBe(external.project.name);
+  expect(persisted.input.activities[0]?.name).toBe(activity.name);
+  await page.getByRole("button", { name: "Save & recalculate", exact: true }).click();
+  await expect(page.getByRole("alert", { name: "Error", exact: true })).toContainText(
+    "changed elsewhere",
+  );
+  await expectRecoveredDraft();
+  page.once("dialog", (dialog) => dialog.dismiss());
+  await page.getByRole("button", { name: "Reload saved version", exact: true }).click();
+  await expectRecoveredDraft();
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Reload saved version", exact: true }).click();
+  await expect(page.getByRole("textbox", { name: "Activity 1 name", exact: true })).toHaveValue(
+    activity.name,
+  );
+  await expectSavedSummary(page, data, revision, external.project.name);
   await expect(page.locator(".revisionBadge")).not.toContainText("Unsaved edits");
 });
 

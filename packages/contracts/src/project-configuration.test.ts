@@ -982,6 +982,109 @@ test("direct validation rejects non-JSON array properties and accessors without 
   assert.equal(invoked, false);
 });
 
+test("direct validation rejects nonordinary array prototypes throughout configuration", () => {
+  const paths: (string | number)[][] = [
+    ["input", "calendars"],
+    ["input", "wbs"],
+    ["input", "activities"],
+    ["input", "relationships"],
+    ...["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"].map((day) => [
+      "input",
+      "calendars",
+      0,
+      "week",
+      day,
+    ]),
+    ["input", "calendars", 0, "exceptions"],
+    ["input", "calendars", 0, "exceptions", 0, "workingIntervals"],
+    ["input", "calendars", 0, "exceptions", 1, "workingIntervals"],
+    ["input", "activities", 0, "constraints"],
+    ["input", "activities", 1, "constraints"],
+  ];
+  class ConfigurationArray extends Array<unknown> {}
+  for (const prototype of [ConfigurationArray.prototype, Object.create(Array.prototype), null]) {
+    for (const path of paths) {
+      const value = configuration();
+      const parent = objectAt(value, path.slice(0, -1));
+      const key = present(path.at(-1));
+      const target = parent[key];
+      assert.ok(Array.isArray(target));
+      Object.setPrototypeOf(target, prototype);
+      const issuePath = path
+        .reduce<string>(
+          (result, part) => (typeof part === "number" ? `${result}[${part}]` : `${result}.${part}`),
+          "",
+        )
+        .slice(1);
+      hasIssue(value, "INVALID_VALUE", issuePath);
+      assert.equal(Object.getPrototypeOf(target), prototype, "validation must not mutate input");
+    }
+  }
+});
+
+test("direct validation rejects array subclasses and custom inherited hooks without invoking them", () => {
+  let invoked = 0;
+  const unexpectedHook = () => {
+    invoked++;
+    throw new Error("Inherited array hook must not execute.");
+  };
+  class ConfigurationArray extends Array<unknown> {
+    static get [Symbol.species]() {
+      return unexpectedHook();
+    }
+  }
+  const subclass = configuration();
+  (subclass.input as unknown as Record<string, unknown>).activities = new ConfigurationArray(
+    ...subclass.input.activities,
+  );
+  hasIssue(subclass, "INVALID_VALUE", "input.activities");
+  assert.equal(invoked, 0);
+  for (const descriptor of [{ value: unexpectedHook }, { get: unexpectedHook }]) {
+    const value = configuration();
+    Object.setPrototypeOf(
+      value.input.activities,
+      Object.create(Array.prototype, {
+        map: descriptor,
+        [Symbol.iterator]: { get: unexpectedHook },
+        toJSON: { get: unexpectedHook },
+      }),
+    );
+    hasIssue(value, "INVALID_VALUE", "input.activities");
+    assert.equal(invoked, 0);
+  }
+});
+
+test("ordinary arrays retain ordinary and null-prototype object dictionary compatibility", () => {
+  const source = configuration();
+  const expected = valid(source);
+  const withNullDictionaries = structuredClone(source);
+  const useNullDictionaries = (value: unknown): void => {
+    if (typeof value !== "object" || value === null) return;
+    if (Array.isArray(value)) {
+      assert.equal(Object.getPrototypeOf(value), Array.prototype);
+      for (const child of value) useNullDictionaries(child);
+    } else {
+      for (const child of Object.values(value)) useNullDictionaries(child);
+      Object.setPrototypeOf(value, null);
+    }
+  };
+  useNullDictionaries(withNullDictionaries);
+  for (const value of [source, withNullDictionaries]) {
+    const result = valid(value);
+    assert.equal(result.canonicalInput, expected.canonicalInput);
+    assert.deepEqual(result.normalizedConfiguration, expected.normalizedConfiguration);
+  }
+  for (const parsed of [
+    JSON.parse(JSON.stringify(source)),
+    parseConfigurationJsonV1(JSON.stringify(source)),
+  ]) {
+    const result = validateProjectConfigurationV1(parsed);
+    assert.ok(result.valid);
+    assert.equal(result.canonicalInput, expected.canonicalInput);
+    assert.deepEqual(result.normalizedConfiguration, expected.normalizedConfiguration);
+  }
+});
+
 test("diagnostic detail text stays bounded for attacker-controlled oversized JSON keys", () => {
   const key = "x".repeat(PROJECT_CONFIGURATION_MAX_BYTES - 10_000);
   const source = JSON.stringify({ ...configuration(), [key]: true });
