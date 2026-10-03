@@ -2,6 +2,7 @@ import { ENGINE_CONTRACT_VERSION } from "@engineo/contracts";
 import rateLimit from "@fastify/rate-limit";
 import Fastify, { type FastifyError, type FastifyInstance } from "fastify";
 import type { Database } from "./db/client.js";
+import { registerConfigurationRoutes } from "./routes/configuration.js";
 import { registerOrganizationRoutes } from "./routes/organizations.js";
 import { registerProjectRoutes } from "./routes/projects.js";
 import { ProcessScheduleRunner, type ScheduleRunner } from "./scheduler/runner.js";
@@ -62,6 +63,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       });
       registerAuthRoutes(scope, db, limiter);
       registerOrganizationRoutes(scope, db);
+      registerConfigurationRoutes(scope, db);
       registerProjectRoutes(scope, db, options.scheduleRunner ?? new ProcessScheduleRunner());
     });
   }

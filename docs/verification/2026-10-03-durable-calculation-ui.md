@@ -200,7 +200,39 @@ increment remains separate for its own exact-head review and fresh 21-file Rust
 coverage (build/identity test files are new).
 Dependency Graph was enabled by an explicitly authorized settings-only action;
 new-head dependency/security gates still must run rather than be inferred.
-The durable increment is not merged or deployed.
+The final exact durable increment is merged; it is not deployed.
+
+## Final reviewed increment and actual-main closeout
+
+Reviewed head `7f1cb07e35a1756476878267fcf47c490493222c`, tree
+`db66c3f72490d2a570159382c588f369576f3220`, passed fresh
+[CI `37109786879`](https://github.com/Logan17de/Engineo/actions/runs/37109786879),
+[CodeQL `37109786839`](https://github.com/Logan17de/Engineo/actions/runs/37109786839)
+and [Dependency Review `37109786846`](https://github.com/Logan17de/Engineo/actions/runs/37109786846).
+All 41 browser cases passed in 1.3 minutes. The actual Docker service topology
+was exercised, not inferred from native/simulated tests. Five retained PNGs were
+visually inspected; geometry matches exactly across idle/dirty/busy states at
+1440/780px, intentional Stop/retry and single-audit/immutable-ID assertions pass.
+Digest-matched artifact `11269605907` preserves real logout-gap 401s, then verified
+B200 injection and distinct A200 restoration.
+
+Independent review approved that exact head/tree. PR #63 merged at
+`586efb4494312f584b5d56b70658866121b96566` with expected base `54678e0e` and
+feature `7f1cb07e` parents, exactly the reviewed tree. Branches remain preserved.
+Fresh actual-main PUSH [CI `37110281415`](https://github.com/Logan17de/Engineo/actions/runs/37110281415)
+and [CodeQL `37110281436`](https://github.com/Logan17de/Engineo/actions/runs/37110281436)
+passed independently at that main checkout: 41 browser / 8 contract / 76 API /
+27 script tests, zero failures/skips, builds/types/audits and 51 active Rust
+tests on 1.99/1.97 (one manual benchmark explicitly ignored). Five pre-existing
+lint warnings and informational/deprecation logs are not described as clean.
+
+Both fresh main SARIF arrays are empty, invocations successful and diagnostics
+absent; all 21 tracked Rust source locations individually match. Main browser
+artifact `11269521900` SHA-256 is
+`962f4c99c0f4ad1d348a7fab659c3d9800db42e371a786e759bc563ad3910d8a`, matching
+GitHub metadata. All five fresh-main PNGs were visually inspected and both exact
+geometry/four identity-phase records verified. Main SARIF ZIP digests also match
+metadata. These fresh artifacts, not prior PR results, close the post-merge loop.
 
 M1 progress, richer views/grouping/sorting, fuller interchange and identity
 administration remain incomplete, as do M2–M6, distributed quotas/jobs, release

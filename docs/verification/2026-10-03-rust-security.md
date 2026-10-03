@@ -127,3 +127,30 @@ the foundation's earlier 19-file count was not reused as acceptance.
 That head is not approved: its separate browser CI failed repeated-click and
 fixture-quota cases. Every correction still needs fresh exact-head CodeQL,
 extraction completeness, dependency review and full browser/CI acceptance.
+
+## Final durable increment and main verification
+
+The corrected durable head `7f1cb07e35a1756476878267fcf47c490493222c` passed
+CodeQL `37109786839` with fresh digest-matched SARIF: empty finding arrays,
+21 clean / zero failed / 21 individually matched tracked sources, successful
+invocations and no extraction diagnostics. Full CI and all 41 browser cases
+passed; independent review approved that exact tree.
+
+PR #63 merged at actual main `586efb4494312f584b5d56b70658866121b96566`, tree
+`db66c3f72490d2a570159382c588f369576f3220`. Fresh actual-main PUSH CodeQL
+`37110281436` separately passed both security-extended query gates and the
+unchanged inventory gate. Downloaded main SARIF again contains empty findings,
+successful invocations and no warning/error/extraction notifications. Every
+tracked source individually matches; 494/494 user macro calls resolved.
+
+Fresh main artifacts and metadata-matched ZIP SHA-256:
+- JavaScript/TypeScript `11269576503`:
+  `387c0a1d70db607c962581e6a148191092cab7ba2c84748013e29d37fdde40e5`
+- Rust `11269028023`:
+  `dec38e452f39200534981938931f864d55bcc2b59c0c71ac6c475bbff7ca3fae`
+
+Fresh actual-main CI `37110281415` passed all 41 browser cases, 8 contracts,
+76 API, 27 scripts and both supported compiler suites (51 active Rust tests,
+one manual benchmark ignored), builds and audits. No high/error finding was
+suppressed or bypassed. These results close the scoped extraction/main gate;
+later heads and production assurance still require their own evidence.
