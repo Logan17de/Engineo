@@ -23,10 +23,10 @@
     "typecheck:e2e": "tsc -p tsconfig.e2e.json"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.0",
+    "@biomejs/biome": "2.5.14",
     "@engineo/contracts": "workspace:*",
     "@playwright/test": "1.63.0",
-    "@types/node": "24.5.2",
-    "typescript": "5.9.3"
+    "@types/node": "26.6.3",
+    "typescript": "7.0.2"
   }
 }
