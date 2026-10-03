@@ -200,6 +200,12 @@ export default function Planner() {
       });
       signal?.throwIfAborted();
       bindSession(me.session.id);
+      // A verified account switch permanently discards the previous account's
+      // draft, even when subsequent organization/project loading fails.
+      if (recovery.current && recovery.current.userId !== me.user.id) {
+        recovery.current = null;
+        setHasRecovery(false);
+      }
       const data = await api<{ organizations: Organization[] }>("/organizations", { signal });
       signal?.throwIfAborted();
       clearWorkspace();
