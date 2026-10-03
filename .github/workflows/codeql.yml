@@ -32,6 +32,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      - name: Prepare the supported Rust extraction toolchain
+        if: matrix.language == 'rust'
+        run: |
+          rustup toolchain install 1.97.0 --profile minimal --component rust-src
+          cargo +1.97.0 check --workspace --all-targets --all-features --locked
+
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
         with:
@@ -47,6 +53,10 @@ jobs:
 
       - name: Reject high severity security findings
         run: node scripts/check-codeql.mjs codeql-results
+
+      - name: Require complete Rust extraction
+        if: matrix.language == 'rust'
+        run: node scripts/check-rust-extraction.mjs codeql-results
 
       - name: Retain security evidence
         if: always()
