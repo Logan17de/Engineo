@@ -19,6 +19,10 @@ jobs:
       actions: read
       security-events: write
       packages: read
+    # Keep generated dependency sources outside the repository inventory that
+    # CodeQL scans before loading the Cargo workspace and expanding macros.
+    env:
+      CARGO_TARGET_DIR: ${{ runner.temp }}/engineo-codeql-target
     strategy:
       fail-fast: false
       matrix:

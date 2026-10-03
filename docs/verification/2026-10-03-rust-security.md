@@ -34,6 +34,18 @@ preparation step installs the compatible compiler and its standard-library
 source, then compiles the locked workspace before extraction. This is not a
 switch to an unsupported manual analysis mode.
 
+The first exact-head attempt (`f7cd6ba`, CodeQL run `37085604094`) built the
+macros and extracted all 19 tracked Rust files cleanly. The strict gate still
+rejected two warnings in generated serde/serde_core `target/debug/build` sources.
+The preparation build had placed these temporary sources inside the repository
+before CodeQL's initial file scan; they are not standalone Cargo modules and
+have no independent semantic analyzer. The analysis job now uses a Cargo target
+directory under the runner's temporary directory for both preparation and
+extraction. This keeps generated build outputs outside the repository inventory
+while Cargo still provides their macro expansions to the application analysis.
+No tracked source, query or diagnostic is excluded. The unchanged gate requires
+19 clean sources and zero extraction errors on the corrected head.
+
 ## Extraction gate
 
 After the existing high/error query gate, Rust analysis must independently pass:
@@ -69,6 +81,12 @@ passed. Six security/extraction regressions passed. Script formatting/lint,
 workflow YAML parsing and `git diff --check` passed. The actual prior SARIF
 was rejected as expected (17 clean, 2 errors, 19 expected). Local full CodeQL
 extraction has not been run; the new exact-head GitHub run is required.
+
+The `f7cd6ba` exact-head CI run `37085604078` passed all checks, including all
+18 browser cases, both Rust compiler suites and dependency audits. Its Rust
+SARIF artifact `11260174069` was downloaded and inspected; the unchanged gate
+also rejects its actual 19-clean/2-error result. Exact-head extraction after
+moving generated build outputs remains pending.
 
 Dependency Review remains failed because Dependency Graph is disabled. No
 repository setting or merge is changed. PM exact-head review and operational
