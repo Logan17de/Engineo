@@ -1229,6 +1229,58 @@ test("verified account switch permanently discards every hidden project recovery
   assert.equal(h.controller.hasPendingRecovery(), false);
 });
 
+test("verified actor before project loading clears a different account's uncertainty and preserves the same actor's original recovery", async () => {
+  for (const sameActor of [false, true]) {
+    const h = harness();
+    h.controller.setName("Private preferences from original account");
+    const plan = await preview(h);
+    await unknownApply(h, plan);
+    const identity = h.controller.getSnapshot().recovery;
+    assert.ok(identity);
+    h.controller.configure(null);
+    assert.equal(h.controller.getSnapshot().recovery, null);
+    assert.equal(h.controller.hasPendingRecovery(), true);
+    const count = h.calls.length;
+    h.controller.verifyActor(sameActor ? SCOPE.actorId : uuid(930));
+    assert.equal(h.controller.hasPendingRecovery(), sameActor);
+    assert.equal(h.controller.getSnapshot().recovery, null);
+    assert.equal(h.controller.getSnapshot().plan, null);
+    assert.equal(h.controller.getSnapshot().name, "My private view");
+    await h.controller.recover();
+    assert.equal(
+      h.calls.length,
+      count,
+      "actor verification without a project must not issue a recovery request",
+    );
+    if (!sameActor) h.controller.verifyActor(SCOPE.actorId);
+    const returnedScope = { ...SCOPE, sessionId: uuid(931) };
+    h.controller.configure(returnedScope);
+    if (sameActor) {
+      assert.strictEqual(h.controller.getSnapshot().recovery, identity);
+      assert.equal(identity.sessionId, SCOPE.sessionId);
+      assert.equal(identity.operationId, plan.review.operationId);
+      assert.equal(identity.reviewedDigest, plan.reviewedDigest);
+      const checking = h.controller.recover();
+      assert.equal(
+        h.last().path,
+        `${route(returnedScope)}/operations/${identity.operationWindowId}/${identity.operationId}`,
+      );
+      h.last().resolve(statusFor(plan, receiptFor(plan), true));
+      await checking;
+      assertHistorical(h, receiptFor(plan));
+    } else {
+      assert.equal(h.controller.getSnapshot().recovery, null);
+      await h.controller.recover();
+      assert.equal(
+        h.calls.length,
+        count,
+        "returning to A cannot restore uncertainty discarded after verified B login",
+      );
+    }
+    assert.equal(h.controller.hasPendingRecovery(), false);
+  }
+});
+
 test("parent Planner busy callback refuses reads, previews, apply and recovery without consuming their state", async () => {
   const h = harness();
   h.setCanStart(false);

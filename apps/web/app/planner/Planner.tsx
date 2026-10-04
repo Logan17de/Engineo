@@ -38,6 +38,8 @@ import {
   type SavedViewScope,
 } from "./saved-view-controller";
 import { useSavedViewProjection } from "./use-saved-view-projection";
+import { viewNeedsCalculation } from "./saved-view-projection";
+import { withIncompleteDurations } from "./activity-draft";
 
 type Organization = { id: string; name: string; slug: string; role: string };
 type Project = {
@@ -88,6 +90,9 @@ export default function Planner() {
   const [result, setResult] = useState<EngineScheduleResultV1 | null>(null);
   const [calculation, setCalculation] = useState<ScheduleCalculationMetadataV1 | null>(null);
   const [dirty, setDirty] = useState(false);
+  const durationDrafts = useRef(new Map<string, string>());
+  const [pendingDurationCount, setPendingDurationCount] = useState(0);
+  const [editorEpoch, setEditorEpoch] = useState(0);
   const [busy, setBusy] = useState("");
   const lock = useRef(false);
   const operation = useRef<AbortController | null>(null);
@@ -139,6 +144,16 @@ export default function Planner() {
     () => new Map(input?.activities.map((activity) => [activity.id, activity]) ?? []),
     [input?.activities],
   );
+  useEffect(() => {
+    const ids = new Set(input?.activities.map((activity) => activity.id) ?? []);
+    let changed = false;
+    for (const id of durationDrafts.current.keys())
+      if (!ids.has(id)) {
+        durationDrafts.current.delete(id);
+        changed = true;
+      }
+    if (changed) setPendingDurationCount(durationDrafts.current.size);
+  }, [input?.activities]);
   const selectedConstraintActivity = activitiesById.has(constraintActivity)
     ? constraintActivity
     : (input?.activities[0]?.id ?? "");
@@ -169,6 +184,9 @@ export default function Planner() {
 
   const clearWorkspace = useCallback(() => {
     savedViews.configure(null);
+    durationDrafts.current.clear();
+    setPendingDurationCount(0);
+    setEditorEpoch((value) => value + 1);
     setOrganizations([]);
     setOrganizationId("");
     setProjects([]);
@@ -189,11 +207,14 @@ export default function Planner() {
       const state = currentState.current;
       const draft = operation.current
         ? operationDraft.current
-        : state.user && state.snapshot && state.dirty
+        : state.user && state.snapshot && (state.dirty || durationDrafts.current.size > 0)
           ? {
               userId: state.user.id,
               organizationId: state.organizationId,
-              snapshot: state.snapshot,
+              snapshot: {
+                ...state.snapshot,
+                input: withIncompleteDurations(state.snapshot.input, durationDrafts.current),
+              },
             }
           : null;
       if (recoverDraft && draft) {
@@ -277,6 +298,9 @@ export default function Planner() {
   const acceptSavedSnapshot = useCallback((saved: Snapshot) => {
     // Only confirmed loads/commits reach this path. Draft changes and recovery
     // must not overwrite the cached saved project name or revision.
+    durationDrafts.current.clear();
+    setPendingDurationCount(0);
+    setEditorEpoch((value) => value + 1);
     setSnapshot(saved);
     setProjects((previous) =>
       previous.map((project) =>
@@ -345,6 +369,7 @@ export default function Planner() {
       });
       signal?.throwIfAborted();
       bindSession(me.session.id);
+      savedViews.verifyActor(me.user.id);
       // A verified account switch permanently discards the previous account's
       // draft, even when subsequent organization/project loading fails.
       if (recovery.current && recovery.current.userId !== me.user.id) {
@@ -414,7 +439,7 @@ export default function Planner() {
         }
       }
     },
-    [clearWorkspace, loadProjects, openProject],
+    [clearWorkspace, loadProjects, openProject, savedViews],
   );
   useEffect(() => {
     const controller = new AbortController();
@@ -528,13 +553,13 @@ export default function Planner() {
   }, [csvPreview]);
   const pendingViewRecovery = savedViews.hasPendingRecovery();
   useEffect(() => {
-    if (!dirty && !hasRecovery && !pendingViewRecovery) return;
+    if (!dirty && !hasRecovery && !pendingViewRecovery && pendingDurationCount === 0) return;
     const warn = (event: BeforeUnloadEvent) => {
       event.preventDefault();
     };
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
-  }, [dirty, hasRecovery, pendingViewRecovery]);
+  }, [dirty, hasRecovery, pendingViewRecovery, pendingDurationCount]);
 
   async function perform(
     label: string,
@@ -690,6 +715,10 @@ export default function Planner() {
     );
   }
   function saveAndCalculate() {
+    if (durationDrafts.current.size > 0) {
+      setError("Finish the activity duration before saving or recalculating.");
+      return;
+    }
     if (!snapshot) return;
     void perform("Saving and calculating", async (signal) => {
       const validation = validateScheduleInputV1(snapshot.input);
@@ -1379,8 +1408,8 @@ export default function Planner() {
                 <div className="panelBody">
                   {viewProjection.pending ? (
                     <p className="tableNote" role="status">
-                      Updating presentation. Previously displayed rows stay visible until
-                      verification finishes.
+                      Verifying the current saved presentation. Rows stay hidden until its source is
+                      verified.
                     </p>
                   ) : null}
                   {viewProjection.error ? (
@@ -1444,13 +1473,53 @@ export default function Planner() {
                       </form>
                     ) : null}
                   </div>
+                  {pendingDurationCount > 0 ? (
+                    <p className="savedViewError" role="status">
+                      Finish the activity duration before saving. An empty editor remains a local
+                      draft.
+                    </p>
+                  ) : null}
+                  {viewNeedsCalculation(viewConfiguration) ? (
+                    <p className="tableNote">
+                      Calculated-dependent presentations are read only for schedule edits. Use
+                      Native or an input-only presentation to edit activities.
+                    </p>
+                  ) : null}
                   <ActivityTable
+                    key={`${organizationId}:${input.project.id}:${editorEpoch}`}
                     input={input}
                     result={dirty ? null : result}
-                    editable={editable}
+                    editable={editable && !viewNeedsCalculation(viewConfiguration)}
                     filter=""
+                    durationDrafts={durationDrafts.current}
                     projection={viewProjection.projection}
                     onEdit={editActivity}
+                    onDurationDraft={(id, raw) => {
+                      if (raw === null) {
+                        const rawDraft = durationDrafts.current.get(id);
+                        const incomplete = durationDrafts.current.delete(id);
+                        if (incomplete && !editable)
+                          setSnapshot((previous) =>
+                            previous
+                              ? {
+                                  ...previous,
+                                  input: withIncompleteDurations(
+                                    previous.input,
+                                    new Map([[id, rawDraft ?? ""]]),
+                                  ),
+                                }
+                              : null,
+                          );
+                      } else {
+                        if (!editable) return;
+                        durationDrafts.current.set(id, raw);
+                        setDirty(true);
+                        setResult(null);
+                        setCalculation(null);
+                        setCsvPreview(null);
+                      }
+                      setPendingDurationCount(durationDrafts.current.size);
+                    }}
                     onDelete={(id) =>
                       change((value) => ({
                         ...value,

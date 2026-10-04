@@ -8,6 +8,7 @@ import type {
   PlannerVisualRowV1,
 } from "@engineo/contracts";
 import { useEffect, useMemo, useRef, useState } from "react";
+import DurationEditor from "./DurationEditor";
 
 export function displayInstant(value: string | undefined): string {
   if (!value) return "—";
@@ -30,6 +31,8 @@ export default function ActivityTable({
   filter,
   projection,
   onEdit,
+  onDurationDraft,
+  durationDrafts,
   onDelete,
 }: {
   input: EngineProjectInputV1;
@@ -39,6 +42,8 @@ export default function ActivityTable({
   projection?: PlannerProjectionV1 | null | undefined;
   onEdit: (id: string, patch: Partial<ActivityInputV1>) => void;
   onDelete: (id: string) => void;
+  onDurationDraft?: ((id: string, raw: string | null) => void) | undefined;
+  durationDrafts?: ReadonlyMap<string, string> | undefined;
 }) {
   const [scrollTop, setScrollTop] = useState(0);
   const scroll = useRef<HTMLElement>(null);
@@ -211,22 +216,13 @@ export default function ActivityTable({
                     />
                   </td>
                   <td>
-                    <input
-                      aria-label={`${label} duration in minutes`}
-                      className="duration"
-                      type="number"
-                      min={0}
-                      step={1}
-                      value={
-                        Number.isFinite(activity.durationMinutes) ? activity.durationMinutes : ""
-                      }
-                      disabled={!editable || activity.kind !== "TASK"}
-                      onChange={(event) =>
-                        onEdit(activity.id, {
-                          durationMinutes:
-                            event.target.value === "" ? Number.NaN : Number(event.target.value),
-                        })
-                      }
+                    <DurationEditor
+                      label={`${label} duration in minutes`}
+                      value={activity.durationMinutes}
+                      draft={durationDrafts?.get(activity.id)}
+                      editable={editable && activity.kind === "TASK"}
+                      onCommit={(durationMinutes) => onEdit(activity.id, { durationMinutes })}
+                      onDraft={(raw) => onDurationDraft?.(activity.id, raw)}
                     />
                   </td>
                   <td>

@@ -198,6 +198,8 @@ export function SavedViewControls(props: ControlsProps) {
                 sort: {
                   ...state.presentation.sort,
                   field: event.target.value as PlannerPresentationV1["sort"]["field"],
+                  direction:
+                    event.target.value === "native" ? "asc" : state.presentation.sort.direction,
                 },
               })
             }

@@ -146,6 +146,14 @@ export class SavedViewController {
   belongsTo(scope: SavedViewScope): boolean {
     return this.scope !== null && sameScope(this.scope, scope);
   }
+  verifyActor(actorId: string): void {
+    if (this.lastActorId !== null && this.lastActorId !== actorId) {
+      this.recoveries.clear();
+      this.identity = null;
+      this.configure(null);
+    }
+    this.lastActorId = actorId;
+  }
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
     return () => {
