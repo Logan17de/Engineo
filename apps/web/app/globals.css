@@ -754,3 +754,75 @@ footer {
   display: block;
   font-size: 0.7rem;
 }
+
+.savedViews {
+  padding: 18px;
+  margin-bottom: 18px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #0b1924;
+}
+.savedViewHeading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 18px;
+}
+.savedViewHeading h2 {
+  margin-bottom: 6px;
+}
+.savedViewFields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(185px, 1fr));
+  gap: 12px;
+}
+.savedViewActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin-top: 16px;
+}
+.savedViewStatus {
+  min-height: 26px;
+  padding-top: 9px;
+  color: var(--green);
+  font-size: 0.85rem;
+}
+.savedViewError {
+  color: var(--red);
+  font-size: 0.87rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.viewReview {
+  padding: 16px;
+  margin-top: 14px;
+  border: 1px solid var(--blue);
+  border-radius: 7px;
+}
+.viewReview p {
+  font-size: 0.85rem;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.viewReview button + button {
+  margin-left: 10px;
+}
+.wbsGroupRow th {
+  height: 42px;
+  padding: 8px 14px;
+  text-align: left;
+  color: var(--blue);
+  background: #193145;
+}
+@media (max-width: 640px) {
+  .savedViewHeading {
+    flex-direction: column;
+  }
+  .savedViewFields {
+    grid-template-columns: 1fr;
+  }
+  .savedViews {
+    padding: 12px;
+  }
+}

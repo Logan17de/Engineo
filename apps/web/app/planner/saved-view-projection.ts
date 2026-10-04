@@ -6,10 +6,12 @@ import {
   type ScheduleCalculationMetadataV1,
   projectPlannerPresentationV1,
   serializeScheduleInputV1,
+  validatePlannerViewConfigurationV1,
 } from "@engineo/contracts";
 import type { SavedViewScope } from "./saved-view-controller";
 import { checkSavedViewProjection, checkedViewConfiguration } from "./saved-view-protocol";
 import { matchesStoredCalculation } from "./saved-calculation";
+import { localInputHash } from "./local-input-hash";
 
 export const viewNeedsCalculation = (config: PlannerViewConfigurationV1): boolean =>
   config.presentation.critical !== "all" ||
@@ -36,6 +38,36 @@ const unavailable = (
   error: reason === "source_invalid" ? "view_invalid" : "view_result_required",
   reason,
 });
+
+export function projectGuiInputOnly(source: GuiViewSource): PlannerProjectionV1 {
+  const checked = validatePlannerViewConfigurationV1(source.configuration);
+  if (!checked.valid)
+    return { available: false, error: "view_invalid", reason: "presentation_invalid" };
+  if (viewNeedsCalculation(checked.normalizedConfiguration))
+    return unavailable(source.dirty ? "input_unsaved" : "calculation_missing");
+  try {
+    return projectPlannerPresentationV1(
+      {
+        organizationId: source.scope.organizationId,
+        projectId: source.scope.projectId,
+        scheduleRevision: source.scope.scheduleRevision,
+        inputHashSha256: localInputHash(serializeScheduleInputV1(source.input)),
+        inputState: source.dirty ? "unsaved" : "saved",
+        currentEngineVersion: null,
+        input: source.input,
+      },
+      null,
+      {
+        projectionVersion: 1,
+        normalizationVersion: 1,
+        configHashSha256: source.savedConfigHash,
+        presentation: checked.normalizedConfiguration.presentation,
+      },
+    );
+  } catch {
+    return unavailable("source_invalid");
+  }
+}
 
 /** Input-only drafts are local. Calculated ordering consumes only a coherent saved API projection. */
 export async function projectGuiSavedView(

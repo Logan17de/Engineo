@@ -76,6 +76,9 @@ const initialState = (): SavedViewState => ({
   notice: "",
   authFailure: null,
 });
+export const EMPTY_SAVED_VIEW_STATE = initialState();
+const ownerKey = (scope: ViewResponseBindingV1) =>
+  `${scope.actorId}:${scope.organizationId}:${scope.projectId}`;
 const sameOwner = (a: ViewResponseBindingV1, b: ViewResponseBindingV1) =>
   a.actorId === b.actorId && a.organizationId === b.organizationId && a.projectId === b.projectId;
 const sameScope = (a: ViewResponseBindingV1, b: ViewResponseBindingV1) =>
@@ -123,13 +126,26 @@ export class SavedViewController {
   private epoch = 0;
   private task: { controller: AbortController; epoch: number; scope: SavedViewScope } | null = null;
   private identity: SavedViewRecovery | null = null;
+  private recoveries = new Map<string, SavedViewRecovery>();
+  private lastActorId: string | null = null;
   private listeners = new Set<() => void>();
   constructor(
     private readonly request: SavedViewRequest,
     private readonly uuid: () => string = () => crypto.randomUUID(),
     private readonly now: () => number = () => Date.now(),
+    private readonly canStart: () => boolean = () => true,
+    private readonly sessionIsCurrent: (scope: SavedViewScope) => boolean = () => true,
   ) {}
   getSnapshot = (): SavedViewState => this.state;
+  hasPendingRecovery = (): boolean => this.recoveries.size > 0;
+  private rememberIdentity(identity: SavedViewRecovery | null): void {
+    if (identity) this.recoveries.set(ownerKey(identity), identity);
+    else if (this.identity) this.recoveries.delete(ownerKey(this.identity));
+    this.identity = identity;
+  }
+  belongsTo(scope: SavedViewScope): boolean {
+    return this.scope !== null && sameScope(this.scope, scope);
+  }
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
     return () => {
@@ -162,7 +178,11 @@ export class SavedViewController {
     this.task?.controller.abort();
     this.task = null;
     this.scope = scope ? { ...scope } : null;
-    if (scope && this.identity && !sameOwner(scope, this.identity)) this.identity = null;
+    if (scope) {
+      if (this.lastActorId !== null && this.lastActorId !== scope.actorId) this.recoveries.clear();
+      this.lastActorId = scope.actorId;
+      this.identity = this.recoveries.get(ownerKey(scope)) ?? null;
+    }
     this.state = {
       ...initialState(),
       recovery: scope && this.identity && sameOwner(scope, this.identity) ? this.identity : null,
@@ -170,14 +190,20 @@ export class SavedViewController {
     for (const listener of this.listeners) listener();
   }
   private start(label: string): NonNullable<SavedViewController["task"]> | null {
-    if (!this.scope || this.task) return null;
+    if (!this.scope || this.task || !this.canStart() || !this.sessionIsCurrent(this.scope))
+      return null;
     const task = { controller: new AbortController(), epoch: this.epoch, scope: { ...this.scope } };
     this.task = task;
     this.publish({ busy: label, error: "", notice: "", authFailure: null });
     return task;
   }
   private current(task: NonNullable<SavedViewController["task"]>): boolean {
-    return this.task === task && task.epoch === this.epoch && !task.controller.signal.aborted;
+    return (
+      this.task === task &&
+      task.epoch === this.epoch &&
+      !task.controller.signal.aborted &&
+      this.sessionIsCurrent(task.scope)
+    );
   }
   private path(scope: SavedViewScope): string {
     return `/organizations/${scope.organizationId}/projects/${scope.projectId}/views`;
@@ -252,6 +278,10 @@ export class SavedViewController {
       return;
     }
     if (this.identity || this.state.plan) return;
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(viewId)) {
+      this.publish({ error: "Select a current private view from the list." });
+      return;
+    }
     const task = this.start("Opening private view");
     if (!task) return;
     try {
@@ -371,7 +401,7 @@ export class SavedViewController {
     }
     const task = this.start("Applying private view");
     if (!task) return;
-    this.identity = recoveryFor(plan);
+    this.rememberIdentity(recoveryFor(plan));
     this.publish({ recovery: this.identity });
     try {
       const value = await this.request(
@@ -388,7 +418,7 @@ export class SavedViewController {
         plan,
       );
       if (!this.current(task)) return;
-      this.identity = null;
+      this.rememberIdentity(null);
       this.publish({
         recovery: null,
         plan: null,
@@ -407,6 +437,7 @@ export class SavedViewController {
       const known =
         error instanceof ApiError &&
         [
+          "revision_conflict",
           "view_revision_conflict",
           "view_schedule_revision_conflict",
           "view_reference_stale",
@@ -416,7 +447,7 @@ export class SavedViewController {
           "view_rate_limited",
         ].includes(error.code);
       if (known) {
-        this.identity = null;
+        this.rememberIdentity(null);
         this.publish({ recovery: null, plan: null });
         this.fail(error, task);
       } else {
@@ -456,18 +487,19 @@ export class SavedViewController {
       if (!this.current(task)) return;
       if (status.receipt) {
         if (!matchesRecovery(status.receipt, identity)) throw new Error("Receipt mismatch");
-        this.identity = null;
+        this.rememberIdentity(null);
         this.publish({
           recovery: null,
           receipt: status.receipt,
           record: null,
           selectedId: "native",
           views: [],
+          nextCursor: null,
           listed: false,
           notice: `Historical receipt confirms ${status.receipt.outcome}. Reload private views for their current state.`,
         });
       } else if (status.absenceDefinitive) {
-        this.identity = null;
+        this.rememberIdentity(null);
         this.publish({
           recovery: null,
           notice:

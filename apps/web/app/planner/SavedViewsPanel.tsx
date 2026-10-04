@@ -1,14 +1,15 @@
 "use client";
 
-import {
-  type EngineProjectInputV1,
-  type PlannerPresentationV1,
-  type PlannerViewActionV1,
+import type {
+  EngineProjectInputV1,
+  PlannerPresentationV1,
+  PlannerViewActionV1,
 } from "@engineo/contracts";
 import { useEffect, useRef, useSyncExternalStore } from "react";
-import { ApiError, api } from "./api";
+import { type ApiError, api } from "./api";
 import {
-  SavedViewController,
+  EMPTY_SAVED_VIEW_STATE,
+  type SavedViewController,
   type SavedViewScope,
   type SavedViewState,
 } from "./saved-view-controller";
@@ -70,6 +71,9 @@ export function SavedViewControls(props: ControlsProps) {
     (state.name !== state.record.configuration.name ||
       JSON.stringify(state.presentation) !==
         JSON.stringify(state.record.configuration.presentation));
+  const transient =
+    !state.record &&
+    JSON.stringify(state.presentation) !== JSON.stringify(EMPTY_SAVED_VIEW_STATE.presentation);
   return (
     <section
       className="savedViews"
@@ -96,11 +100,16 @@ export function SavedViewControls(props: ControlsProps) {
         <label>
           Selected presentation
           <select
-            value={state.selectedId}
+            value={transient ? "transient" : state.selectedId}
             disabled={locked}
             onChange={(event) => props.onSelect(event.target.value)}
           >
             <option value="native">Native</option>
+            {transient ? (
+              <option value="transient" disabled>
+                Local presentation
+              </option>
+            ) : null}
             {state.record && !state.views.some((view) => view.viewId === state.record?.viewId) ? (
               <option value={state.record.viewId}>{state.record.configuration.name}</option>
             ) : null}
@@ -204,7 +213,7 @@ export function SavedViewControls(props: ControlsProps) {
           Sort direction
           <select
             value={state.presentation.sort.direction}
-            disabled={locked}
+            disabled={locked || state.presentation.sort.field === "native"}
             onChange={(event) =>
               change({
                 sort: {
@@ -273,7 +282,7 @@ export function SavedViewControls(props: ControlsProps) {
       ) : null}
       {state.plan ? (
         <section className="viewReview" aria-label="Review private view action">
-          <h3>
+          <h3 tabIndex={-1}>
             Review {state.plan.review.action}:{" "}
             {state.plan.review.desiredConfiguration?.name ??
               state.plan.review.baseConfiguration?.name}
@@ -310,7 +319,7 @@ export function SavedViewControls(props: ControlsProps) {
       ) : null}
       {state.recovery ? (
         <section className="viewReview" aria-label="Uncertain private view apply">
-          <h3>Check the original apply</h3>
+          <h3 tabIndex={-1}>Check the original apply</h3>
           <p>
             Stopping a request does not cancel a commit. Another mutation stays blocked while this
             outcome is unknown.
@@ -333,7 +342,7 @@ export function SavedViewControls(props: ControlsProps) {
           describe the current view record.
         </p>
       ) : null}
-      <div className="savedViewStatus" role="status">
+      <div className="savedViewStatus" role="status" tabIndex={-1}>
         {state.busy || state.notice}
       </div>
       {state.error ? (
@@ -360,27 +369,44 @@ export default function SavedViewsPanel({
   dirty: boolean;
   onSessionFailure: (error: ApiError) => void;
 }) {
-  const state = useSyncExternalStore(
+  const snapshot = useSyncExternalStore(
     controller.subscribe,
     controller.getSnapshot,
     controller.getSnapshot,
   );
+  const state = controller.belongsTo(scope) ? snapshot : EMPTY_SAVED_VIEW_STATE;
   const panel = useRef<HTMLDivElement>(null);
   const returnFocus = useRef<HTMLElement | null>(null);
-  useEffect(() => {
-    controller.configure(scope);
-    void controller.loadPage();
-    return () => controller.configure(null);
-  }, [controller, scope.actorId, scope.sessionId, scope.organizationId, scope.projectId]);
+  const previousPlan = useRef(false);
+  const restoreOnCompletion = useRef(false);
   useEffect(() => {
     controller.configure(scope);
   }, [controller, scope]);
+  const scopeKey = `${scope.actorId}:${scope.sessionId}:${scope.organizationId}:${scope.projectId}`;
+  useEffect(() => {
+    if (scopeKey) void controller.loadPage();
+    return () => controller.configure(null);
+  }, [controller, scopeKey]);
   useEffect(() => {
     if (state.authFailure) onSessionFailure(state.authFailure);
   }, [state.authFailure, onSessionFailure]);
   useEffect(() => {
-    if (state.plan) panel.current?.querySelector<HTMLElement>(".viewReview h3")?.focus();
-  }, [state.plan]);
+    if (state.plan && !previousPlan.current)
+      panel.current?.querySelector<HTMLElement>(".viewReview h3")?.focus();
+    if (!state.busy && (restoreOnCompletion.current || (previousPlan.current && !state.plan))) {
+      restoreOnCompletion.current = false;
+      if (!panel.current?.closest("[hidden]")) {
+        if (state.recovery)
+          panel.current
+            ?.querySelector<HTMLElement>("[aria-label='Uncertain private view apply'] h3")
+            ?.focus();
+        else if (returnFocus.current?.isConnected && !returnFocus.current.matches(":disabled"))
+          returnFocus.current.focus();
+        else panel.current?.querySelector<HTMLElement>(".savedViewStatus")?.focus();
+      }
+    }
+    previousPlan.current = Boolean(state.plan);
+  }, [state.plan, state.busy, state.recovery]);
   return (
     <div ref={panel}>
       <SavedViewControls
@@ -402,14 +428,19 @@ export default function SavedViewsPanel({
           void controller.preview(action);
         }}
         onApply={() => {
+          restoreOnCompletion.current = true;
           void controller.apply();
         }}
         onDiscard={() => {
           controller.discardPreview();
           returnFocus.current?.focus();
         }}
-        onStop={() => controller.stopWaiting()}
+        onStop={() => {
+          restoreOnCompletion.current = true;
+          controller.stopWaiting();
+        }}
         onRecover={() => {
+          restoreOnCompletion.current = true;
           void controller.recover();
         }}
       />

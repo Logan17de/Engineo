@@ -4,6 +4,8 @@ import type {
   ActivityInputV1,
   EngineProjectInputV1,
   EngineScheduleResultV1,
+  PlannerProjectionV1,
+  PlannerVisualRowV1,
 } from "@engineo/contracts";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -26,6 +28,7 @@ export default function ActivityTable({
   result,
   editable,
   filter,
+  projection,
   onEdit,
   onDelete,
 }: {
@@ -33,19 +36,48 @@ export default function ActivityTable({
   result: EngineScheduleResultV1 | null;
   editable: boolean;
   filter: string;
+  projection?: PlannerProjectionV1 | null | undefined;
   onEdit: (id: string, patch: Partial<ActivityInputV1>) => void;
   onDelete: (id: string) => void;
 }) {
   const [scrollTop, setScrollTop] = useState(0);
   const scroll = useRef<HTMLElement>(null);
   const [atEnd, setAtEnd] = useState(false);
-  const rows = useMemo(() => {
+  const activitiesById = useMemo(
+    () => new Map(input.activities.map((activity) => [activity.id, activity])),
+    [input.activities],
+  );
+  const rows = useMemo<PlannerVisualRowV1[]>(() => {
+    if (projection !== undefined) return projection?.available ? projection.rows : [];
     const term = filter.trim().toLowerCase();
-    return input.activities.filter(
-      (activity) =>
-        !term || activity.name.toLowerCase().includes(term) || activity.id.includes(term),
-    );
-  }, [input.activities, filter]);
+    return input.activities
+      .map((activity, nativeIndex) => ({ activity, nativeIndex }))
+      .filter(
+        ({ activity }) =>
+          !term ||
+          activity.name.toLowerCase().includes(term) ||
+          activity.id.toLowerCase().includes(term),
+      )
+      .map(({ activity, nativeIndex }, index) => ({
+        kind: "activity",
+        activityId: activity.id,
+        nativeIndex,
+        displayOrdinal: index + 1,
+        groupKey: null,
+      }));
+  }, [input.activities, filter, projection]);
+  const visibleActivityCount = projection?.available
+    ? projection.visibleActivityCount
+    : rows.length;
+  const rowIdentity = rows
+    .map((row) => (row.kind === "group" ? row.key : row.activityId))
+    .join("|");
+  useEffect(() => {
+    if (rowIdentity !== undefined) {
+      scroll.current?.scrollTo({ top: 0 });
+      setScrollTop(0);
+    }
+  }, [rowIdentity]);
   useEffect(() => {
     const node = scroll.current;
     if (!node || rows.length === 0) {
@@ -76,8 +108,9 @@ export default function ActivityTable({
   return (
     <>
       <p className="tableNote">
-        {rows.length.toLocaleString()} activities · Dates in UTC ·{" "}
-        {result ? "Calculated dates" : "Save and recalculate to show dates"}
+        {visibleActivityCount.toLocaleString()} of {input.activities.length.toLocaleString()}{" "}
+        activities · {projection?.available ? `${projection.groupCount} WBS groups · ` : ""}Dates in
+        UTC · {result ? "Calculated dates" : "Save and recalculate to show dates"}
       </p>
       {rows.length > VISIBLE_ROWS ? (
         <nav className="tableNavigation" aria-label="Activity range controls">
@@ -142,7 +175,17 @@ export default function ActivityTable({
             </tbody>
           ) : null}
           <tbody>
-            {visible.map((activity, index) => {
+            {visible.map((row, index) => {
+              if (row.kind === "group")
+                return (
+                  <tr key={row.key} className="wbsGroupRow" aria-rowindex={first + index + 2}>
+                    <th scope="row" colSpan={11}>
+                      WBS {row.wbsCode} · {row.wbsName} · {row.activityCount} activities
+                    </th>
+                  </tr>
+                );
+              const activity = activitiesById.get(row.activityId);
+              if (!activity) return null;
               const dates = result?.activities[activity.id];
               const left = dates
                 ? ((Date.parse(dates.earlyStart) - range.start) / range.width) * 100
@@ -154,10 +197,10 @@ export default function ActivityTable({
                       100,
                   )
                 : 0;
-              const label = `Activity ${first + index + 1}`;
+              const label = `Activity ${row.displayOrdinal}`;
               return (
                 <tr key={activity.id} aria-rowindex={first + index + 2}>
-                  <td className="rowNumber">{first + index + 1}</td>
+                  <td className="rowNumber">{row.displayOrdinal}</td>
                   <td>
                     <input
                       aria-label={`${label} name`}
@@ -286,9 +329,17 @@ export default function ActivityTable({
         </table>
         {rows.length === 0 ? (
           <div className="emptyTable">
-            {input.activities.length
-              ? "No matching activities."
-              : "Add your first activities to begin planning."}
+            {projection === null
+              ? "Verifying presentation…"
+              : projection !== undefined && !projection.available
+                ? projection.reason === "reference_stale"
+                  ? "This view references an unavailable WBS. Choose a current WBS or use Native."
+                  : projection.error === "view_result_required"
+                    ? "This view needs a verified current saved calculation. Save/recalculate your schedule or use an input-only presentation."
+                    : "This presentation is unavailable. Use Native to inspect and repair the draft."
+                : input.activities.length
+                  ? "No matching activities."
+                  : "Add your first activities to begin planning."}
           </div>
         ) : null}
       </section>

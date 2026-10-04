@@ -674,9 +674,12 @@ export async function checkSavedViewPlan(
   request: PlannerViewPlanRequestV1,
   base?: ViewReadV1,
 ): Promise<PlannerViewPlanV1> {
-  const plan = await boundPlan(value, expected, false);
+  // Snapshot caller intent/base before Web Crypto yields, so later UI edits cannot
+  // change which operation this response is being compared with.
   const checked = validatePlannerViewPlanRequestV1(data(request));
   if (!checked.valid) invalid();
+  const baseSnapshot = base === undefined ? undefined : data(base);
+  const plan = await boundPlan(value, expected, false);
   const intent = checked.value,
     review = plan.review;
   const desired =
@@ -692,9 +695,9 @@ export async function checkSavedViewPlan(
     review.desiredConfigHash !== (desired?.configHashSha256 ?? null)
   )
     invalid();
-  if (base !== undefined) {
+  if (baseSnapshot !== undefined) {
     if (intent.action === "create") invalid();
-    const current = await checkSavedViewRead(base, intent.viewId);
+    const current = await checkSavedViewRead(baseSnapshot, intent.viewId);
     if (
       !verifyPlannerViewReviewBaseV1(review, {
         viewId: current.viewId,

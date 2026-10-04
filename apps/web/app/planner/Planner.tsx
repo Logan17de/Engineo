@@ -5,6 +5,8 @@ import {
   type ActivityCsvPreviewV1,
   type ActivityInputV1,
   type CalendarV1,
+  NATIVE_PLANNER_PRESENTATION_V1,
+  type PlannerViewConfigurationV1,
   ENGINE_TIME_ZONES,
   type EngineProjectInputV1,
   type EngineScheduleResultV1,
@@ -14,7 +16,7 @@ import {
   validateScheduleInputV1,
   WEEKDAYS,
 } from "@engineo/contracts";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import ActivityTable, { displayInstant } from "./ActivityTable";
 import {
   ApiError,
@@ -29,6 +31,13 @@ import {
   subscribeSessionChanges,
 } from "./api";
 import { type CalculationSnapshot, matchesStoredCalculation } from "./saved-calculation";
+import SavedViewsPanel, { savedViewRequest } from "./SavedViewsPanel";
+import {
+  EMPTY_SAVED_VIEW_STATE,
+  SavedViewController,
+  type SavedViewScope,
+} from "./saved-view-controller";
+import { useSavedViewProjection } from "./use-saved-view-projection";
 
 type Organization = { id: string; name: string; slug: string; role: string };
 type Project = {
@@ -82,6 +91,31 @@ export default function Planner() {
   const [busy, setBusy] = useState("");
   const lock = useRef(false);
   const operation = useRef<AbortController | null>(null);
+  const [savedViews] = useState(
+    () =>
+      new SavedViewController(
+        savedViewRequest,
+        undefined,
+        undefined,
+        () => !lock.current,
+        (scope) => {
+          if (currentSessionId() === scope.sessionId && !sessionCookieChanged()) return true;
+          onViewSessionFailure(
+            new ApiError(
+              409,
+              "session_changed",
+              "Your sign-in changed. Sign in again before opening private views.",
+            ),
+          );
+          return false;
+        },
+      ),
+  );
+  const viewSnapshot = useSyncExternalStore(
+    savedViews.subscribe,
+    savedViews.getSnapshot,
+    savedViews.getSnapshot,
+  );
   const initialization = useRef<AbortController | null>(null);
   const verification = useRef<AbortController | null>(null);
   const verifySession = useRef<() => void>(() => {});
@@ -93,7 +127,6 @@ export default function Planner() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [panel, setPanel] = useState<Panel>("Activities");
-  const [filter, setFilter] = useState("");
   const [count, setCount] = useState(1);
   const [constraintActivity, setConstraintActivity] = useState("");
   const [calendarId, setCalendarId] = useState("");
@@ -109,7 +142,25 @@ export default function Planner() {
   const selectedConstraintActivity = activitiesById.has(constraintActivity)
     ? constraintActivity
     : (input?.activities[0]?.id ?? "");
-  const editable = permissions.write && !busy;
+  const viewProjectId = input?.project.id;
+  const viewScheduleRevision = snapshot?.revision;
+  const viewSessionId = currentSessionId();
+  const viewScope = useMemo<SavedViewScope | null>(
+    () =>
+      user && viewProjectId && viewScheduleRevision !== undefined && viewSessionId
+        ? {
+            actorId: user.id,
+            sessionId: viewSessionId,
+            organizationId,
+            projectId: viewProjectId,
+            scheduleRevision: viewScheduleRevision,
+          }
+        : null,
+    [user, viewProjectId, viewScheduleRevision, viewSessionId, organizationId],
+  );
+  const viewState =
+    viewScope && savedViews.belongsTo(viewScope) ? viewSnapshot : EMPTY_SAVED_VIEW_STATE;
+  const editable = permissions.write && !busy && !viewState.busy;
   const canStopRequest =
     busy === "Saving and calculating" || busy === "Previewing CSV" || busy === "Applying CSV";
   const projectPath = input ? `/organizations/${organizationId}/projects/${input.project.id}` : "";
@@ -117,6 +168,7 @@ export default function Planner() {
   currentState.current = { user, organizationId, snapshot, dirty };
 
   const clearWorkspace = useCallback(() => {
+    savedViews.configure(null);
     setOrganizations([]);
     setOrganizationId("");
     setProjects([]);
@@ -127,11 +179,10 @@ export default function Planner() {
     setDirty(false);
     setCalendarId("");
     setConstraintActivity("");
-    setFilter("");
     setPanel("Activities");
     setCsvFile(null);
     setCsvPreview(null);
-  }, []);
+  }, [savedViews]);
 
   const invalidateAccount = useCallback(
     (recoverDraft: boolean, message: string) => {
@@ -171,6 +222,51 @@ export default function Planner() {
       setError(message);
     },
     [clearWorkspace],
+  );
+
+  const onViewSessionFailure = useCallback(
+    (failure: ApiError) => {
+      invalidateAccount(true, failure.message);
+    },
+    [invalidateAccount],
+  );
+  const viewConfiguration = useMemo<PlannerViewConfigurationV1>(
+    () => ({
+      schemaVersion: 1,
+      kind: "engineo-planner-view",
+      name: viewState.record?.configuration.name ?? "Local presentation",
+      visibility: "private",
+      presentation: viewState.presentation,
+    }),
+    [viewState.record, viewState.presentation],
+  );
+  const nativePresentation =
+    viewState.selectedId === "native" &&
+    JSON.stringify(viewState.presentation) === JSON.stringify(NATIVE_PLANNER_PRESENTATION_V1);
+  const viewSource = useMemo(
+    () =>
+      viewScope && input
+        ? {
+            scope: viewScope,
+            input,
+            dirty,
+            result,
+            calculation,
+            configuration: viewConfiguration,
+            savedConfigHash:
+              viewState.record &&
+              JSON.stringify(viewState.record.configuration.presentation) ===
+                JSON.stringify(viewConfiguration.presentation)
+                ? viewState.record.configHashSha256
+                : null,
+          }
+        : null,
+    [viewScope, input, dirty, result, calculation, viewConfiguration, viewState.record],
+  );
+  const viewProjection = useSavedViewProjection(
+    viewSource,
+    nativePresentation,
+    onViewSessionFailure,
   );
 
   const loadProjects = useCallback(async (id: string, signal?: AbortSignal) => {
@@ -236,7 +332,6 @@ export default function Planner() {
       setConstraintActivity(loaded.input.activities[0]?.id ?? "");
       setCalendarId(loaded.input.project.defaultCalendarId);
       setPanel("Activities");
-      setFilter("");
       window.history.replaceState(null, "", `/?organization=${org}&project=${id}`);
       return { loaded, permissions: detail.permissions };
     },
@@ -431,21 +526,22 @@ export default function Planner() {
   useEffect(() => {
     if (csvPreview) csvPreviewRef.current?.focus();
   }, [csvPreview]);
+  const pendingViewRecovery = savedViews.hasPendingRecovery();
   useEffect(() => {
-    if (!dirty && !hasRecovery) return;
+    if (!dirty && !hasRecovery && !pendingViewRecovery) return;
     const warn = (event: BeforeUnloadEvent) => {
       event.preventDefault();
     };
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
-  }, [dirty, hasRecovery]);
+  }, [dirty, hasRecovery, pendingViewRecovery]);
 
   async function perform(
     label: string,
     action: (signal: AbortSignal) => Promise<unknown>,
     recoverDraft = true,
   ) {
-    if (lock.current) return;
+    if (lock.current || savedViews.getSnapshot().busy) return;
     initialization.current?.abort();
     initialization.current = null;
     verification.current?.abort();
@@ -752,7 +848,7 @@ export default function Planner() {
                 type="email"
                 autoComplete="username"
                 required
-                disabled={Boolean(busy)}
+                disabled={Boolean(busy || viewState.busy)}
               />
             </label>
             <label>
@@ -762,10 +858,10 @@ export default function Planner() {
                 type="password"
                 autoComplete="current-password"
                 required
-                disabled={Boolean(busy)}
+                disabled={Boolean(busy || viewState.busy)}
               />
             </label>
-            <button className="primary" type="submit" disabled={Boolean(busy)}>
+            <button className="primary" type="submit" disabled={Boolean(busy || viewState.busy)}>
               Sign in
             </button>
             <p className="muted">Use the account provided by your organization.</p>
@@ -783,7 +879,7 @@ export default function Planner() {
               <select
                 aria-label="Organization"
                 value={organizationId}
-                disabled={Boolean(busy)}
+                disabled={Boolean(busy || viewState.busy)}
                 onChange={(event) => {
                   if (!discard()) return;
                   const id = event.target.value;
@@ -817,7 +913,7 @@ export default function Planner() {
                 className={
                   input?.project.id === project.id ? "projectCard selectedProject" : "projectCard"
                 }
-                disabled={Boolean(busy)}
+                disabled={Boolean(busy || viewState.busy)}
                 onClick={() => {
                   if (discard())
                     void perform("Opening project", async (signal) =>
@@ -872,7 +968,7 @@ export default function Planner() {
                     placeholder="my-organization"
                   />
                 </label>
-                <button type="submit" disabled={Boolean(busy)}>
+                <button type="submit" disabled={Boolean(busy || viewState.busy)}>
                   Create organization
                 </button>
               </form>
@@ -933,7 +1029,11 @@ export default function Planner() {
                       placeholder="Europe/London"
                     />
                   </label>
-                  <button className="primary" type="submit" disabled={Boolean(busy)}>
+                  <button
+                    className="primary"
+                    type="submit"
+                    disabled={Boolean(busy || viewState.busy)}
+                  >
                     Create project
                   </button>
                 </form>
@@ -956,7 +1056,7 @@ export default function Planner() {
                 <div className="toolbarActions">
                   <button
                     type="button"
-                    disabled={Boolean(busy)}
+                    disabled={Boolean(busy || viewState.busy)}
                     onClick={() => {
                       if (discard())
                         void perform("Reloading project", async (signal) =>
@@ -968,7 +1068,7 @@ export default function Planner() {
                   </button>
                   <button
                     type="button"
-                    disabled={Boolean(busy)}
+                    disabled={Boolean(busy || viewState.busy)}
                     onClick={() =>
                       void perform("Exporting project", async (signal) => {
                         if (dirty) throw new Error("Save your edits before exporting the project.");
@@ -992,7 +1092,7 @@ export default function Planner() {
                   </button>
                   <button
                     type="button"
-                    disabled={Boolean(busy)}
+                    disabled={Boolean(busy || viewState.busy)}
                     onClick={() =>
                       void perform("Exporting activities", async (signal) => {
                         if (dirty) throw new Error("Save your edits before exporting activities.");
@@ -1067,6 +1167,18 @@ export default function Planner() {
                   </button>
                 ))}
               </nav>
+              <div hidden={panel !== "Activities"}>
+                {viewScope ? (
+                  <SavedViewsPanel
+                    controller={savedViews}
+                    scope={viewScope}
+                    wbs={input.wbs}
+                    disabled={Boolean(busy)}
+                    dirty={dirty}
+                    onSessionFailure={onViewSessionFailure}
+                  />
+                ) : null}
+              </div>
               {panel === "Import CSV" ? (
                 <section className="csvPanel" aria-label="Activity CSV import">
                   <h2>Update activities from a spreadsheet</h2>
@@ -1249,7 +1361,7 @@ export default function Planner() {
                           )}
                           <button
                             type="button"
-                            disabled={Boolean(busy)}
+                            disabled={Boolean(busy || viewState.busy)}
                             onClick={() => {
                               setCsvPreview(null);
                               setCsvFile(null);
@@ -1265,16 +1377,18 @@ export default function Planner() {
               ) : null}
               {panel === "Activities" ? (
                 <div className="panelBody">
+                  {viewProjection.pending ? (
+                    <p className="tableNote" role="status">
+                      Updating presentation. Previously displayed rows stay visible until
+                      verification finishes.
+                    </p>
+                  ) : null}
+                  {viewProjection.error ? (
+                    <p className="savedViewError" role="alert">
+                      {viewProjection.error}
+                    </p>
+                  ) : null}
                   <div className="activityTools">
-                    <label>
-                      Find activities
-                      <input
-                        type="search"
-                        value={filter}
-                        onChange={(event) => setFilter(event.target.value)}
-                        placeholder="Search name or ID"
-                      />
-                    </label>
                     {permissions.write ? (
                       <form
                         onSubmit={(event) => {
@@ -1334,7 +1448,8 @@ export default function Planner() {
                     input={input}
                     result={dirty ? null : result}
                     editable={editable}
-                    filter={filter}
+                    filter=""
+                    projection={viewProjection.projection}
                     onEdit={editActivity}
                     onDelete={(id) =>
                       change((value) => ({

@@ -170,18 +170,42 @@ export async function api<T>(
   };
   assertCurrent();
   options.signal?.throwIfAborted();
+  if (options.responsePolicy && !expected)
+    throw new ApiError(401, "unauthenticated", messages.unauthenticated ?? "Session ended.");
   if (expected) headers["X-Engineo-Session"] = expected.id;
   if (options.body !== undefined) headers["Content-Type"] = "application/json";
   if (method !== "GET") {
     const token = expected?.csrf ?? startedCsrf;
     if (token) headers["X-CSRF-Token"] = token;
   }
+  let serializedBody: string | undefined;
+  try {
+    serializedBody = options.body === undefined ? undefined : JSON.stringify(options.body);
+  } catch (error) {
+    if (options.responsePolicy)
+      throw new ApiError(
+        400,
+        "view_request_invalid",
+        "Private-view request could not be validated.",
+      );
+    throw error;
+  }
+  if (
+    options.responsePolicy &&
+    options.body !== undefined &&
+    (serializedBody === undefined || new TextEncoder().encode(serializedBody).byteLength > 65536)
+  )
+    throw new ApiError(
+      413,
+      "view_request_invalid",
+      "Private-view request exceeds its bounded JSON body limit.",
+    );
   const response = await fetch(`/api${path}`, {
     method,
     headers,
     credentials: "same-origin",
     cache: "no-store",
-    ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
+    ...(serializedBody === undefined ? {} : { body: serializedBody }),
     signal: options.signal ?? null,
   });
   assertCurrent(path === "/auth/logout" && response.status === 204);
@@ -191,17 +215,27 @@ export async function api<T>(
     response.headers.get("X-Engineo-Session") !== expected.id
   )
     throw changedSession();
-  const privateData = options.responsePolicy
-    ? await privateJson(response, options.responsePolicy)
-    : undefined;
+  let privateData: unknown;
+  try {
+    privateData = options.responsePolicy
+      ? await privateJson(response, options.responsePolicy)
+      : undefined;
+  } catch (error) {
+    assertCurrent();
+    throw error;
+  }
   assertCurrent();
   if (!response.ok) {
     const body = (
       options.responsePolicy ? privateData : await response.json().catch(() => ({}))
     ) as { error?: string; issues?: { path: string; message: string }[]; message?: string };
     assertCurrent();
-    const code: string = body.error ?? "request_failed";
-    const issue = body.issues?.[0];
+    const code: string = options.responsePolicy
+      ? typeof body?.error === "string" && Object.hasOwn(messages, body.error)
+        ? body.error
+        : "view_request_failed"
+      : (body.error ?? "request_failed");
+    const issue = options.responsePolicy ? undefined : body.issues?.[0];
     throw new ApiError(
       response.status,
       code,
