@@ -14,7 +14,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
       - name: Review added dependencies
-        uses: actions/dependency-review-action@2f920dad77d7f4f2ea876b66287b896de40dda79 # 5.0.0
+        uses: actions/dependency-review-action@907a6e9569212033966bc0b69d32473b046dd66b # 5.0.0
         with:
           fail-on-severity: high
           fail-on-scopes: runtime, development, unknown
